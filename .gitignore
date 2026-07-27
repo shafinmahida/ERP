@@ -9,14 +9,14 @@ coverage/
 src-tauri/target/
 src-tauri/gen/
 
-# SQLite Databases & User Data Folders
+# SQLite Databases & Top-level User Data Folders (leading slash ensures exact root match)
 *.db
 *.sqlite
 *.sqlite3
-Dayar-E-Habib Data/
-Documents/
-Backups/
-Logs/
+/Dayar-E-Habib Data/
+/Documents/
+/Backups/
+/Logs/
 
 # Environment files
 .env
