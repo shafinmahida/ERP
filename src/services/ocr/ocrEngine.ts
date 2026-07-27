@@ -1,11 +1,13 @@
 /**
- * TAURI RUST BACKEND NATIVE OCR SERVICE WRAPPER
+ * DAYAR-E-HABIB ERP — PRODUCTION-GRADE OCR ENGINE (ZERO MOCK DATA)
  * 
- * ARCHITECTURAL REQUIREMENT COMPLIANCE:
- * Webview UI NEVER owns or executes OCR processing locally.
- * All OCR scanning is delegated 100% to the Rust backend via Tauri command IPC:
- * `invoke('perform_backend_ocr', { imageDataBase64 })`.
+ * ARCHITECTURAL INTEGRITY RULES:
+ * 1. ZERO mock, hardcoded, dummy, fallback, or sample identity data.
+ * 2. Every extracted character MUST originate directly from the actual image.
+ * 3. Uses Tesseract.js engine or Tauri Rust IPC backend for real image text recognition.
  */
+
+import { createWorker } from 'tesseract.js';
 
 export interface OcrEngineOutput {
   rawText: string;
@@ -19,34 +21,68 @@ export interface OcrEngineOutput {
 export async function runOfflineOcr(imageDataUrl: string): Promise<OcrEngineOutput> {
   const processedAt = new Date().toISOString();
 
-  // Invoke Tauri 2 Rust Backend IPC Command if running in desktop shell
+  if (!imageDataUrl || imageDataUrl.trim() === '') {
+    return {
+      rawText: '',
+      lines: [],
+      engineName: 'Tesseract.js / Rust Native Engine',
+      engineVersion: '7.0.0',
+      processedAt,
+      averageConfidence: 0,
+    };
+  }
+
+  // Stage 1: Try Tauri 2 Rust Backend IPC Command if running in desktop shell
   if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
     try {
       const { invoke } = (window as any).__TAURI_INTERNALS__;
       const res: any = await invoke('perform_backend_ocr', { imageDataBase64: imageDataUrl });
-      return {
-        rawText: res.raw_text,
-        lines: res.lines,
-        engineName: res.engine_name,
-        engineVersion: res.engine_version,
-        processedAt: res.processed_at,
-        averageConfidence: res.average_confidence,
-      };
+      if (res && res.lines && res.lines.length > 0) {
+        return {
+          rawText: res.raw_text,
+          lines: res.lines,
+          engineName: res.engine_name,
+          engineVersion: res.engine_version,
+          processedAt: res.processed_at,
+          averageConfidence: res.average_confidence,
+        };
+      }
     } catch (e) {
-      console.warn('Tauri Rust backend command invoke failed, using native backend bridge fallback:', e);
+      console.warn('Tauri Rust backend OCR IPC command returned empty/unhandled, running Tesseract.js engine:', e);
     }
   }
 
-  // Native Backend Service Response Fallback
-  return {
-    rawText: 'P<PAKMEHMOOD<<TARIQ<<<<<<<<<<<<<<<<<<<<<<<<<\nAB12345671PAK7506154M3201093<<<<<<<<<<<<<<00',
-    lines: [
-      'P<PAKMEHMOOD<<TARIQ<<<<<<<<<<<<<<<<<<<<<<<<<',
-      'AB12345671PAK7506154M3201093<<<<<<<<<<<<<<00',
-    ],
-    engineName: 'Tauri Rust Native OCR Service',
-    engineVersion: '2.0.0 (Rust Backend)',
-    processedAt,
-    averageConfidence: 98.5,
-  };
+  // Stage 2: Tesseract.js Engine Real Image Character Recognition
+  try {
+    const worker = await createWorker('eng');
+    const ret = await worker.recognize(imageDataUrl);
+    await worker.terminate();
+
+    const rawText = ret.data.text || '';
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    const averageConfidence = ret.data.confidence || 0;
+
+    return {
+      rawText,
+      lines,
+      engineName: 'Tesseract.js OCR Engine',
+      engineVersion: '7.0.0',
+      processedAt,
+      averageConfidence: Math.round(averageConfidence),
+    };
+  } catch (err) {
+    console.error('Tesseract.js OCR execution error:', err);
+    return {
+      rawText: '',
+      lines: [],
+      engineName: 'Tesseract.js OCR Engine (Error)',
+      engineVersion: '7.0.0',
+      processedAt,
+      averageConfidence: 0,
+    };
+  }
 }

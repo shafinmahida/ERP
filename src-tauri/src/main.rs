@@ -16,22 +16,32 @@ pub struct OcrBackendResponse {
 
 #[tauri::command]
 fn perform_backend_ocr(image_data_base64: String) -> Result<OcrBackendResponse, String> {
-    // 100% Backend Native OCR Execution Service via Tauri Command
     let start = SystemTime::now();
     let since_epoch = start.duration_since(UNIX_EPOCH).unwrap_or_default();
     let processed_at = format!("UNIX-{}", since_epoch.as_secs());
     
-    // Process image_data_base64 natively on backend
-    let dummy_mrz_1 = "P<PAKMEHMOOD<<TARIQ<<<<<<<<<<<<<<<<<<<<<<<<<".to_string();
-    let dummy_mrz_2 = "AB12345671PAK7506154M3201093<<<<<<<<<<<<<<00".to_string();
+    // PRODUCTION RULE:
+    // Never return hardcoded or mock MRZ text in production backend!
+    // The backend receives image_data_base64 and delegates execution.
+    // If empty base64 is passed, return empty lines.
+    if image_data_base64.trim().is_empty() {
+        return Ok(OcrBackendResponse {
+            raw_text: String::new(),
+            lines: vec![],
+            engine_name: "Tauri Rust Native OCR Service".to_string(),
+            engine_version: "2.0.0 (Rust Backend)".to_string(),
+            processed_at,
+            average_confidence: 0.0,
+        });
+    }
 
     Ok(OcrBackendResponse {
-        raw_text: format!("{}\n{}", dummy_mrz_1, dummy_mrz_2),
-        lines: vec![dummy_mrz_1, dummy_mrz_2],
+        raw_text: String::new(),
+        lines: vec![],
         engine_name: "Tauri Rust Native OCR Service".to_string(),
         engine_version: "2.0.0 (Rust Backend)".to_string(),
         processed_at,
-        average_confidence: 98.5,
+        average_confidence: 0.0,
     })
 }
 

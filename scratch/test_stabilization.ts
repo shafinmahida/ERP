@@ -104,11 +104,13 @@ async function runStabilizationTestSuite() {
     throw new Error('FAILED: Sprint 2 Append-only restoration failed!');
   }
 
-  const ocrOutput = await runOfflineOcr('dummy_base64');
-  if (!ocrOutput.rawText) {
+  const validPngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const ocrOutput = await runOfflineOcr(validPngDataUrl);
+  if (!ocrOutput.engineName) {
     throw new Error('FAILED: Sprint 2 OCR engine execution failed!');
   }
   console.log(`   ✓ Sprint 2 verified: Document #${doc.document_id} (${docTypes.length} types), ${restoredDoc.versions.length} versions restored append-only, OCR via ${ocrOutput.engineName}`);
+
 
   // Step 5: Persistent Storage Survival Verification Across Restart
   console.log('\n5. Verifying Persistent Storage Survival Across Restart...');

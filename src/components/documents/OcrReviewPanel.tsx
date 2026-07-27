@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { ShieldAlert, CheckCircle2, RotateCw, Eye, Sparkles, RefreshCw, X } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, RotateCw, Sparkles, X, AlertTriangle, Eye } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label, Badge } from '../ui/card';
 import { OcrExtractionResult } from '../../services/ocr/fieldExtractor';
-import { ConfidenceTier } from '../../services/ocr/mrzParser';
+import { ConfidenceTier, FieldConfidence } from '../../services/ocr/mrzParser';
 
 interface OcrReviewPanelProps {
   isOpen: boolean;
@@ -42,9 +42,17 @@ export function OcrReviewPanel({
   const [editableDob, setEditableDob] = useState(parsed.date_of_birth.value);
   const [editableGender, setEditableGender] = useState(parsed.gender.value);
   const [editableExpiry, setEditableExpiry] = useState(parsed.expiry_date.value);
-  const [activeTab, setActiveTab] = useState<'parsed' | 'rawText'>('parsed');
 
-  const getTierBadge = (tier: ConfidenceTier, score: number) => {
+  const [activeTab, setActiveTab] = useState<'parsed' | 'rawText' | 'rawMrz'>('parsed');
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const getTierBadge = (confidence: FieldConfidence) => {
+    const { tier, score, checksumPassed, hasDiscrepancy } = confidence;
+
+    if (hasDiscrepancy) {
+      return <Badge variant="destructive" className="animate-pulse">⚠ Discrepancy ({score}%)</Badge>;
+    }
+
     switch (tier) {
       case 'Very High':
         return <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40">98%+ Very High</Badge>;
@@ -56,6 +64,21 @@ export function OcrReviewPanel({
         return <Badge variant="destructive">{score}% Low</Badge>;
     }
   };
+
+  const getActiveBbox = () => {
+    if (!focusedField) return parsed.mrzBoundingBox;
+    switch (focusedField) {
+      case 'full_name': return parsed.full_name.boundingBox;
+      case 'passport_number': return parsed.passport_number.boundingBox;
+      case 'nationality': return parsed.nationality.boundingBox;
+      case 'date_of_birth': return parsed.date_of_birth.boundingBox;
+      case 'gender': return parsed.gender.boundingBox;
+      case 'expiry_date': return parsed.expiry_date.boundingBox;
+      default: return parsed.mrzBoundingBox;
+    }
+  };
+
+  const activeBbox = getActiveBbox();
 
   const handleConfirm = () => {
     onConfirmScannedFields({
@@ -77,32 +100,32 @@ export function OcrReviewPanel({
             <div className="flex items-center gap-2 text-emerald-400">
               <Sparkles className="h-5 w-5" />
               <DialogTitle className="text-xl font-bold text-slate-100">
-                Offline Passport OCR & MRZ Auto-Fill Review
+                Production Passport Intelligence & MRZ Verification
               </DialogTitle>
             </div>
             <Badge variant="gold" className="font-mono">
-              {diag.ocrEngine} {diag.ocrEngineVersion}
+              {diag.ocrEngine}
             </Badge>
           </div>
 
           <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 flex items-center justify-between text-xs text-amber-300">
             <span className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4" />
-              <strong>Scanned — Please verify extracted data against the document image.</strong>
+              <ShieldAlert className="h-4 w-4 text-amber-400" />
+              <strong>Human Verification Required — Select any field to highlight source region.</strong>
             </span>
             <span className="font-mono text-[11px]">
-              Avg Confidence: <strong>{diag.averageConfidenceScore}%</strong>
+              Overall Confidence: <strong>{parsed.overallConfidenceScore}% ({parsed.overallConfidenceTier})</strong>
             </span>
           </div>
         </DialogHeader>
 
         {/* Side-by-Side Review Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-          {/* Left Column: Document Image Preview + MRZ Detection Overlay */}
+          {/* Left Column: Visual Canvas & Interactive Bounding Box Highlight */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-xs text-slate-400 font-bold uppercase tracking-wider">
-                Document Image Preview (MRZ Highlighted)
+                Document Preview & Region Highlight
               </Label>
 
               <Button
@@ -113,7 +136,7 @@ export function OcrReviewPanel({
                 className="h-7 text-xs border-slate-700 hover:bg-slate-800 text-slate-200"
               >
                 <RotateCw className="h-3.5 w-3.5 mr-1 text-emerald-400" />
-                Rotate Image 90°
+                Rotate 90°
               </Button>
             </div>
 
@@ -125,27 +148,29 @@ export function OcrReviewPanel({
                     alt="Passport Scan"
                     className="w-full h-auto rounded-lg object-contain max-h-[360px]"
                   />
-                  {/* MRZ Region Visual Overlay Rectangle */}
-                  <div
-                    className="absolute border-2 border-emerald-400 bg-emerald-500/20 rounded shadow-lg flex items-center justify-center"
-                    style={{
-                      left: '5%',
-                      bottom: '5%',
-                      width: '90%',
-                      height: '25%',
-                    }}
-                  >
-                    <span className="text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/40">
-                      ✓ MRZ TD3 Zone Detected ({parsed.mrzValid ? 'Checksum Valid' : 'Check Digits Verified'})
-                    </span>
-                  </div>
+                  {/* Interactive Dynamic Bounding Box Overlay */}
+                  {activeBbox && (
+                    <div
+                      className="absolute border-2 border-emerald-400 bg-emerald-500/20 rounded shadow-lg transition-all duration-300 flex items-center justify-center"
+                      style={{
+                        left: `${activeBbox.x}%`,
+                        top: `${activeBbox.y}%`,
+                        width: `${activeBbox.width}%`,
+                        height: `${activeBbox.height}%`,
+                      }}
+                    >
+                      <span className="text-[10px] font-mono font-bold bg-emerald-950/90 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/40">
+                        {focusedField ? focusedField.toUpperCase().replace('_', ' ') : 'MRZ REGION'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-slate-500 italic">No image loaded</p>
               )}
             </div>
 
-            {/* Tab selector for Parsed Fields vs Raw OCR Output */}
+            {/* Tab navigation */}
             <div className="flex border-b border-slate-800 text-xs">
               <button
                 type="button"
@@ -154,7 +179,16 @@ export function OcrReviewPanel({
                   activeTab === 'parsed' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400'
                 }`}
               >
-                Parsed Fields
+                Parsed Identity
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('rawMrz')}
+                className={`py-2 px-4 font-semibold border-b-2 cursor-pointer ${
+                  activeTab === 'rawMrz' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400'
+                }`}
+              >
+                Raw MRZ Lines
               </button>
               <button
                 type="button"
@@ -163,63 +197,69 @@ export function OcrReviewPanel({
                   activeTab === 'rawText' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400'
                 }`}
               >
-                Raw OCR Text Output
+                Raw OCR Text
               </button>
             </div>
           </div>
 
-          {/* Right Column: Extracted Fields Review & Editing */}
+          {/* Right Column: Editable Extracted Fields */}
           <div className="space-y-4">
             {activeTab === 'parsed' ? (
               <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center justify-between">
-                  <span>Editable Extracted Fields</span>
-                  <span className="text-[10px] text-slate-400">4-Tier Confidence Rating</span>
+                  <span>Extracted Identity Fields</span>
+                  <span className="text-[10px] text-slate-400">Calculated Confidence</span>
                 </h4>
 
-                <div>
+                {/* Full Name */}
+                <div onFocus={() => setFocusedField('full_name')} onBlur={() => setFocusedField(null)}>
                   <div className="flex items-center justify-between mb-1">
-                    <Label>Full Name</Label>
-                    {getTierBadge(parsed.full_name.tier, parsed.full_name.score)}
+                    <Label className="text-slate-300 font-medium">Full Name</Label>
+                    {getTierBadge(parsed.full_name)}
                   </div>
                   <Input
                     value={editableName}
                     onChange={(e) => setEditableName(e.target.value)}
                     className="bg-slate-900 border-slate-800 text-slate-100 font-semibold"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">{parsed.full_name.reason}</p>
                 </div>
 
+                {/* Passport No & Nationality */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div onFocus={() => setFocusedField('passport_number')} onBlur={() => setFocusedField(null)}>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Passport Number</Label>
-                      {getTierBadge(parsed.passport_number.tier, parsed.passport_number.score)}
+                      <Label className="text-slate-300 font-medium">Passport Number</Label>
+                      {getTierBadge(parsed.passport_number)}
                     </div>
                     <Input
                       value={editablePassportNo}
                       onChange={(e) => setEditablePassportNo(e.target.value.toUpperCase())}
                       className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold tracking-wider"
                     />
+                    <p className="text-[10px] text-slate-400 mt-1">{parsed.passport_number.reason}</p>
                   </div>
 
-                  <div>
+                  <div onFocus={() => setFocusedField('nationality')} onBlur={() => setFocusedField(null)}>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Nationality</Label>
-                      {getTierBadge(parsed.nationality.tier, parsed.nationality.score)}
+                      <Label className="text-slate-300 font-medium">Nationality</Label>
+                      {getTierBadge(parsed.nationality)}
                     </div>
                     <Input
                       value={editableNationality}
                       onChange={(e) => setEditableNationality(e.target.value)}
                       className="bg-slate-900 border-slate-800 text-slate-100"
                     />
+                    <p className="text-[10px] text-slate-400 mt-1">{parsed.nationality.reason}</p>
                   </div>
                 </div>
 
+                {/* DOB & Gender */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div onFocus={() => setFocusedField('date_of_birth')} onBlur={() => setFocusedField(null)}>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Date of Birth</Label>
-                      {getTierBadge(parsed.date_of_birth.tier, parsed.date_of_birth.score)}
+                      <Label className="text-slate-300 font-medium">Date of Birth</Label>
+                      {getTierBadge(parsed.date_of_birth)}
                     </div>
                     <Input
                       type="date"
@@ -227,12 +267,13 @@ export function OcrReviewPanel({
                       onChange={(e) => setEditableDob(e.target.value)}
                       className="bg-slate-900 border-slate-800 text-slate-100 font-mono"
                     />
+                    <p className="text-[10px] text-slate-400 mt-1">{parsed.date_of_birth.reason}</p>
                   </div>
 
-                  <div>
+                  <div onFocus={() => setFocusedField('gender')} onBlur={() => setFocusedField(null)}>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Gender</Label>
-                      {getTierBadge(parsed.gender.tier, parsed.gender.score)}
+                      <Label className="text-slate-300 font-medium">Gender</Label>
+                      {getTierBadge(parsed.gender)}
                     </div>
                     <select
                       value={editableGender}
@@ -243,13 +284,15 @@ export function OcrReviewPanel({
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
                     </select>
+                    <p className="text-[10px] text-slate-400 mt-1">{parsed.gender.reason}</p>
                   </div>
                 </div>
 
-                <div>
+                {/* Expiry Date */}
+                <div onFocus={() => setFocusedField('expiry_date')} onBlur={() => setFocusedField(null)}>
                   <div className="flex items-center justify-between mb-1">
-                    <Label>Passport Expiry Date</Label>
-                    {getTierBadge(parsed.expiry_date.tier, parsed.expiry_date.score)}
+                    <Label className="text-slate-300 font-medium">Passport Expiry Date</Label>
+                    {getTierBadge(parsed.expiry_date)}
                   </div>
                   <Input
                     type="date"
@@ -257,15 +300,39 @@ export function OcrReviewPanel({
                     onChange={(e) => setEditableExpiry(e.target.value)}
                     className="bg-slate-900 border-slate-800 text-slate-100 font-mono"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">{parsed.expiry_date.reason}</p>
+                </div>
+              </div>
+            ) : activeTab === 'rawMrz' ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+                <Label className="text-emerald-400 font-bold uppercase tracking-wider text-xs">
+                  Raw MRZ Machine Readable Zone Lines
+                </Label>
+                <div>
+                  <Label className="text-xs text-slate-400">MRZ Line 1 (Type, Country, Name)</Label>
+                  <p className="font-mono text-xs bg-slate-900 text-emerald-300 p-2.5 rounded border border-slate-800 break-all select-all">
+                    {parsed.mrzRawLine1 || 'No MRZ Line 1 detected'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-400">MRZ Line 2 (Passport No, DOB, Sex, Expiry)</Label>
+                  <p className="font-mono text-xs bg-slate-900 text-emerald-300 p-2.5 rounded border border-slate-800 break-all select-all">
+                    {parsed.mrzRawLine2 || 'No MRZ Line 2 detected'}
+                  </p>
+                </div>
+                <div className="p-2 rounded bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400">
+                  Status: <strong>{parsed.mrzValid ? '✓ Modulo-10 Checksums Passed' : '⚠ MRZ Checksum Unverified or Missing'}</strong>
                 </div>
               </div>
             ) : (
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-2">
-                <Label>Preserved Raw OCR Text Extraction</Label>
+                <Label className="text-slate-300 font-bold uppercase tracking-wider text-xs">
+                  Raw OCR Text Stream Output
+                </Label>
                 <textarea
                   readOnly
                   value={ocrResult.rawText}
-                  className="w-full h-64 bg-slate-900 text-slate-300 font-mono text-xs p-3 rounded-lg border border-slate-800 focus:outline-none resize-none"
+                  className="w-full h-64 bg-slate-900 text-slate-300 font-mono text-xs p-3 rounded-lg border border-slate-800 focus:outline-none resize-none select-all"
                 />
               </div>
             )}
@@ -281,7 +348,7 @@ export function OcrReviewPanel({
 
           <Button type="button" onClick={handleConfirm} className="bg-emerald-600 hover:bg-emerald-700 font-bold px-6">
             <CheckCircle2 className="h-4 w-4 mr-2" />
-            Verify & Pre-fill Form
+            Verify & Apply Extracted Data
           </Button>
         </div>
       </DialogContent>

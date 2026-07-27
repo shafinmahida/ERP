@@ -4,6 +4,11 @@ export interface FieldConfidence {
   value: string;
   score: number; // 0 to 100
   tier: ConfidenceTier;
+  checksumPassed: boolean;
+  formatValid: boolean;
+  reason: string;
+  hasDiscrepancy?: boolean;
+  boundingBox?: { x: number; y: number; width: number; height: number };
 }
 
 export interface ParsedPassportMrz {
@@ -16,6 +21,9 @@ export interface ParsedPassportMrz {
   mrzValid: boolean;
   mrzRawLine1: string;
   mrzRawLine2: string;
+  documentType: 'Passport' | 'Visa' | 'ID Card' | 'Other';
+  overallConfidenceScore: number;
+  overallConfidenceTier: ConfidenceTier;
   mrzBoundingBox?: { x: number; y: number; width: number; height: number };
 }
 
@@ -43,7 +51,7 @@ export function getConfidenceTier(score: number): ConfidenceTier {
   return 'Low';
 }
 
-function calculateMrzChecksum(str: string): number {
+export function calculateMrzChecksum(str: string): number {
   const weights = [7, 3, 1];
   let sum = 0;
   for (let i = 0; i < str.length; i++) {
@@ -57,7 +65,7 @@ function calculateMrzChecksum(str: string): number {
   return sum % 10;
 }
 
-function formatMrzDate(yymmdd: string): string {
+export function formatMrzDate(yymmdd: string): string {
   if (!/^\d{6}$/.test(yymmdd)) return yymmdd;
   const yy = parseInt(yymmdd.slice(0, 2), 10);
   const mm = yymmdd.slice(2, 4);
@@ -69,6 +77,8 @@ function formatMrzDate(yymmdd: string): string {
 }
 
 export function extractPassportMrzFromText(rawText: string): { line1: string; line2: string } | null {
+  if (!rawText) return null;
+
   const lines = rawText
     .split(/\r?\n/)
     .map((l) => l.trim().replace(/[«\(\)\[\]\{\}]/g, '<').toUpperCase());
@@ -105,13 +115,15 @@ export function extractPassportMrzFromText(rawText: string): { line1: string; li
 }
 
 export function extractVisualPassportFields(rawText: string) {
+  if (!rawText) {
+    return { passportNumber: '', dateOfBirth: '', expiryDate: '', gender: 'Male', fullName: '' };
+  }
+
   const upper = rawText.toUpperCase();
 
-  // Passport number: e.g. AB1234567, A12345678, K1234567
   const passMatch = upper.match(/\b([A-Z]{1,2}\d{7,8})\b/);
   const passportNumber = passMatch ? passMatch[1] : '';
 
-  // Dates
   const dates = upper.match(/\b(\d{2}[\/\.-]\d{2}[\/\.-]\d{4}|\d{4}[\/\.-]\d{2}[\/\.-]\d{2})\b/g) || [];
   let dateOfBirth = '';
   let expiryDate = '';
@@ -123,14 +135,11 @@ export function extractVisualPassportFields(rawText: string) {
     dateOfBirth = dates[0] || '';
   }
 
-
-  // Gender
   let gender = 'Male';
   if (/\b(FEMALE|WOMAN|F)\b/.test(upper)) {
     gender = 'Female';
   }
 
-  // Full Name
   let fullName = '';
   const nameMatch = upper.match(/(?:NAME|FULL NAME|SURNAME|GIVEN NAMES)[\s:]+([A-Z\s]+)/);
   if (nameMatch) {
@@ -163,20 +172,21 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
   const nameParts = nameField.split('<<');
   const surname = (nameParts[0] || '').replace(/</g, ' ').trim();
   const givenNames = (nameParts[1] || '').replace(/</g, ' ').trim();
-  const fullName = surname && givenNames ? `${givenNames} ${surname}` : surname || givenNames || 'Unknown';
+  const fullName = surname && givenNames ? `${givenNames} ${surname}` : surname || givenNames || '';
 
   // Line 2 Parsing:
   const passNo = cleanL2.slice(0, 9).replace(/</g, '');
-  const passCheck = parseInt(cleanL2[9], 10);
+  const passCheckStr = cleanL2[9];
+  const passCheck = parseInt(passCheckStr, 10);
   const expectedPassCheck = calculateMrzChecksum(cleanL2.slice(0, 9));
   const passValid = !isNaN(passCheck) && passCheck === expectedPassCheck;
 
   const natCode = cleanL2.slice(10, 13);
-  const nationality: string = (ISO_NATIONALITY_MAP[natCode] || ISO_NATIONALITY_MAP[countryCode]) ?? 'Pakistani';
-
+  const nationality: string = (ISO_NATIONALITY_MAP[natCode] || ISO_NATIONALITY_MAP[countryCode]) ?? (natCode ? natCode : '');
 
   const dobStr = cleanL2.slice(13, 19);
-  const dobCheck = parseInt(cleanL2[19], 10);
+  const dobCheckStr = cleanL2[19];
+  const dobCheck = parseInt(dobCheckStr, 10);
   const expectedDobCheck = calculateMrzChecksum(dobStr);
   const dobValid = !isNaN(dobCheck) && dobCheck === expectedDobCheck;
 
@@ -184,30 +194,138 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
   const gender = rawSex === 'M' ? 'Male' : rawSex === 'F' ? 'Female' : 'Other';
 
   const expStr = cleanL2.slice(21, 27);
-  const expCheck = parseInt(cleanL2[27], 10);
+  const expCheckStr = cleanL2[27];
+  const expCheck = parseInt(expCheckStr, 10);
   const expectedExpCheck = calculateMrzChecksum(expStr);
   const expValid = !isNaN(expCheck) && expCheck === expectedExpCheck;
 
   const mrzValid = passValid && dobValid && expValid;
 
-  // Calculate field confidence scores
-  const passScore = passValid ? 99 : 88;
-  const dobScore = dobValid ? 99 : 85;
-  const expScore = expValid ? 99 : 85;
-  const nameScore = mrzValid ? 98 : 90;
-  const natScore = ISO_NATIONALITY_MAP[natCode] ? 99 : 88;
-  const genderScore = rawSex === 'M' || rawSex === 'F' ? 99 : 75;
+  // STRICT FIELD CONFIDENCE ENGINE:
+  // - MRZ Checksum Match: +40%
+  // - Regex Format Valid: +30%
+  // - Non-Empty Value: +20%
+  // - Verified Field Match: +10%
+  const calculateFieldConfidence = (
+    val: string,
+    checksumPassed: boolean,
+    formatRegex: RegExp,
+    label: string,
+    bbox: { x: number; y: number; width: number; height: number }
+  ): FieldConfidence => {
+    if (!val || val.trim() === '') {
+      return {
+        value: '',
+        score: 0,
+        tier: 'Low',
+        checksumPassed: false,
+        formatValid: false,
+        reason: `${label} missing or unreadable in MRZ`,
+        boundingBox: bbox,
+      };
+    }
+
+    const formatValid = formatRegex.test(val);
+    let score = 0;
+
+    if (checksumPassed) score += 40;
+    if (formatValid) score += 30;
+    if (val.length >= 3) score += 20;
+    if (mrzValid) score += 10;
+
+    // Cap confidence if MRZ checksum failed
+    if (!checksumPassed && score > 45) {
+      score = 45;
+    }
+
+    return {
+      value: val,
+      score,
+      tier: getConfidenceTier(score),
+      checksumPassed,
+      formatValid,
+      reason: checksumPassed
+        ? `${label} verified via MRZ Modulo-10 checksum algorithm.`
+        : `${label} extracted but MRZ checksum validation failed or unverified.`,
+      boundingBox: bbox,
+    };
+  };
+
+  const passField = calculateFieldConfidence(
+    passNo,
+    passValid,
+    /^[A-Z0-9]{7,9}$/,
+    'Passport Number',
+    { x: 5, y: 70, width: 25, height: 10 }
+  );
+
+  const dobFormatted = formatMrzDate(dobStr);
+  const dobField = calculateFieldConfidence(
+    dobFormatted,
+    dobValid,
+    /^\d{4}-\d{2}-\d{2}$/,
+    'Date of Birth',
+    { x: 30, y: 70, width: 20, height: 10 }
+  );
+
+  const expFormatted = formatMrzDate(expStr);
+  const expField = calculateFieldConfidence(
+    expFormatted,
+    expValid,
+    /^\d{4}-\d{2}-\d{2}$/,
+    'Expiry Date',
+    { x: 55, y: 70, width: 20, height: 10 }
+  );
+
+  const nameFieldScore = fullName ? (mrzValid ? 98 : 75) : 0;
+  const nameConfidence: FieldConfidence = {
+    value: fullName,
+    score: nameFieldScore,
+    tier: getConfidenceTier(nameFieldScore),
+    checksumPassed: mrzValid,
+    formatValid: Boolean(fullName && fullName.length > 2),
+    reason: fullName ? 'Full Name extracted from MRZ Line 1' : 'Name unreadable in MRZ',
+    boundingBox: { x: 5, y: 15, width: 50, height: 15 },
+  };
+
+  const natFieldScore = nationality ? 95 : 0;
+  const natConfidence: FieldConfidence = {
+    value: nationality,
+    score: natFieldScore,
+    tier: getConfidenceTier(natFieldScore),
+    checksumPassed: true,
+    formatValid: Boolean(nationality),
+    reason: nationality ? `ISO Country Code ${natCode || countryCode} verified` : 'Nationality missing',
+    boundingBox: { x: 30, y: 35, width: 20, height: 10 },
+  };
+
+  const genderConfidence: FieldConfidence = {
+    value: gender,
+    score: rawSex === 'M' || rawSex === 'F' ? 95 : 50,
+    tier: getConfidenceTier(rawSex === 'M' || rawSex === 'F' ? 95 : 50),
+    checksumPassed: true,
+    formatValid: rawSex === 'M' || rawSex === 'F',
+    reason: `Gender char '${rawSex}' parsed`,
+    boundingBox: { x: 50, y: 35, width: 10, height: 10 },
+  };
+
+  // Overall Document Confidence: Capped at weakest critical field
+  const mandatoryScores = [passField.score, dobField.score, expField.score, nameConfidence.score];
+  const overallConfidenceScore = Math.min(...mandatoryScores);
 
   return {
-    full_name: { value: fullName, score: nameScore, tier: getConfidenceTier(nameScore) },
-    passport_number: { value: passNo, score: passScore, tier: getConfidenceTier(passScore) },
-    nationality: { value: nationality, score: natScore, tier: getConfidenceTier(natScore) },
-    date_of_birth: { value: formatMrzDate(dobStr), score: dobScore, tier: getConfidenceTier(dobScore) },
-    gender: { value: gender, score: genderScore, tier: getConfidenceTier(genderScore) },
-    expiry_date: { value: formatMrzDate(expStr), score: expScore, tier: getConfidenceTier(expScore) },
+    full_name: nameConfidence,
+    passport_number: passField,
+    nationality: natConfidence,
+    date_of_birth: dobField,
+    gender: genderConfidence,
+    expiry_date: expField,
     mrzValid,
     mrzRawLine1: cleanL1,
     mrzRawLine2: cleanL2,
-    mrzBoundingBox: { x: 10, y: 70, width: 80, height: 25 },
+    documentType: 'Passport',
+    overallConfidenceScore,
+    overallConfidenceTier: getConfidenceTier(overallConfidenceScore),
+    mrzBoundingBox: { x: 5, y: 65, width: 90, height: 30 },
   };
 }
