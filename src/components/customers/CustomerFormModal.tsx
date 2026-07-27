@@ -213,14 +213,18 @@ export function CustomerFormModal({
     reset({
       ...watch(),
       full_name: scanned.full_name || watch('full_name'),
+      father_name: scanned.father_name || watch('father_name'),
       date_of_birth: scanned.date_of_birth || watch('date_of_birth'),
       gender: (scanned.gender as any) || watch('gender'),
       nationality: scanned.nationality || watch('nationality'),
       passport_number: scanned.passport_number || watch('passport_number'),
+      issue_date: scanned.issue_date || watch('issue_date'),
       expiry_date: scanned.expiry_date || watch('expiry_date'),
+      place_of_issue: scanned.place_of_issue || watch('place_of_issue'),
     });
     setShowOcrPanel(false);
   };
+
 
 
   if (!isOpen) return null;

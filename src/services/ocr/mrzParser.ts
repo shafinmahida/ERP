@@ -12,12 +12,20 @@ export interface FieldConfidence {
 }
 
 export interface ParsedPassportMrz {
+  // Core Identity (from MRZ)
   full_name: FieldConfidence;
   passport_number: FieldConfidence;
   nationality: FieldConfidence;
   date_of_birth: FieldConfidence;
   gender: FieldConfidence;
   expiry_date: FieldConfidence;
+
+  // Visual-extracted fields (from bio page text)
+  father_name: FieldConfidence;
+  issue_date: FieldConfidence;
+  place_of_issue: FieldConfidence;
+  place_of_birth: FieldConfidence;
+
   mrzValid: boolean;
   mrzRawLine1: string;
   mrzRawLine2: string;
@@ -42,6 +50,22 @@ const ISO_NATIONALITY_MAP: Record<string, string> = {
   IDN: 'Indonesian',
   BGD: 'Bangladeshi',
   AFG: 'Afghan',
+  IRN: 'Iranian',
+  OMN: 'Omani',
+  KWT: 'Kuwaiti',
+  QAT: 'Qatari',
+  BHR: 'Bahraini',
+  JOR: 'Jordanian',
+  SYR: 'Syrian',
+  IRQ: 'Iraqi',
+  LBN: 'Lebanese',
+  NGA: 'Nigerian',
+  ZAF: 'South African',
+  KEN: 'Kenyan',
+  ETH: 'Ethiopian',
+  PHL: 'Filipino',
+  LKA: 'Sri Lankan',
+  NPL: 'Nepali',
 };
 
 export function getConfidenceTier(score: number): ConfidenceTier {
@@ -76,6 +100,35 @@ export function formatMrzDate(yymmdd: string): string {
   return `${fullYear}-${mm}-${dd}`;
 }
 
+/** Format a dd/mm/yyyy or dd-mm-yyyy or yyyy-mm-dd visual date into yyyy-mm-dd ISO */
+export function normalizeVisualDate(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  // dd/mm/yyyy or dd-mm-yyyy or dd.mm.yyyy
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmyMatch) {
+    const dd = dmyMatch[1].padStart(2, '0');
+    const mm = dmyMatch[2].padStart(2, '0');
+    const yyyy = dmyMatch[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // yyyy/mm/dd
+  const ymdMatch = trimmed.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (ymdMatch) {
+    const yyyy = ymdMatch[1];
+    const mm = ymdMatch[2].padStart(2, '0');
+    const dd = ymdMatch[3].padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return trimmed;
+}
+
 export function extractPassportMrzFromText(rawText: string): { line1: string; line2: string } | null {
   if (!rawText) return null;
 
@@ -99,7 +152,7 @@ export function extractPassportMrzFromText(rawText: string): { line1: string; li
     }
   }
 
-  // Search for 44-character line pairs starting with P
+  // Fallback: 44-character lines starting with P
   for (let i = 0; i < lines.length - 1; i++) {
     const c1 = lines[i].replace(/[^A-Z0-9<]/g, '');
     const c2 = lines[i + 1].replace(/[^A-Z0-9<]/g, '');
@@ -114,44 +167,188 @@ export function extractPassportMrzFromText(rawText: string): { line1: string; li
   return null;
 }
 
+/**
+ * Rich visual passport field extractor — parses bio page and observation page text
+ * to extract all fields that MRZ cannot provide: father's name, issue date,
+ * place of issue, place of birth, and the full untruncated name.
+ */
 export function extractVisualPassportFields(rawText: string) {
   if (!rawText) {
-    return { passportNumber: '', dateOfBirth: '', expiryDate: '', gender: 'Male', fullName: '' };
+    return {
+      passportNumber: '',
+      dateOfBirth: '',
+      expiryDate: '',
+      issueDate: '',
+      gender: 'Male',
+      fullName: '',
+      surname: '',
+      givenNames: '',
+      fatherName: '',
+      placeOfIssue: '',
+      placeOfBirth: '',
+    };
   }
 
   const upper = rawText.toUpperCase();
+  const lines = upper.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
+  // ─── Passport Number ─────────────────────────────────────────────────────────
   const passMatch = upper.match(/\b([A-Z]{1,2}\d{7,8})\b/);
   const passportNumber = passMatch ? passMatch[1] : '';
 
-  const dates = upper.match(/\b(\d{2}[\/\.-]\d{2}[\/\.-]\d{4}|\d{4}[\/\.-]\d{2}[\/\.-]\d{2})\b/g) || [];
+  // ─── Dates (all dd/mm/yyyy and yyyy-mm-dd occurrences) ───────────────────────
+  const allDates = [...upper.matchAll(/\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})\b/g)]
+    .map((m) => normalizeVisualDate(m[1]));
+
   let dateOfBirth = '';
   let expiryDate = '';
+  let issueDate = '';
 
-  if (dates.length >= 2) {
-    dateOfBirth = dates[0] || '';
-    expiryDate = dates[1] || '';
-  } else if (dates.length === 1) {
-    dateOfBirth = dates[0] || '';
+  // Look for labelled dates first
+  const dobMatch = upper.match(/(?:DATE?\s*OF?\s*BIRTH|D\.O\.B|DOB)[^\d]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})/);
+  if (dobMatch) dateOfBirth = normalizeVisualDate(dobMatch[1]);
+
+  const expiryMatch = upper.match(/(?:DATE?\s*OF?\s*EXP|EXPIRY|EXPIRATION|VALID\s*UNTIL|VALID\s*TILL)[^\d]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})/);
+  if (expiryMatch) expiryDate = normalizeVisualDate(expiryMatch[1]);
+
+  const issueMatch = upper.match(/(?:DATE?\s*OF?\s*ISSUE|DATE?\s*OF?\s*ISSU|ISSUED?\s*ON|ISSUED?)[^\d]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})/);
+  if (issueMatch) issueDate = normalizeVisualDate(issueMatch[1]);
+
+  // If labelled dates not found, use positional: oldest date = issue, middle = DOB, newest = expiry
+  if ((!dateOfBirth || !expiryDate || !issueDate) && allDates.length >= 2) {
+    const sorted = [...allDates].sort();
+    if (!dateOfBirth) dateOfBirth = sorted[Math.floor(sorted.length / 2)] || '';
+    if (!expiryDate) expiryDate = sorted[sorted.length - 1] || '';
+    if (!issueDate && sorted.length >= 3) issueDate = sorted[0] || '';
   }
 
+  // ─── Gender ──────────────────────────────────────────────────────────────────
   let gender = 'Male';
-  if (/\b(FEMALE|WOMAN|F)\b/.test(upper)) {
+  if (/\b(FEMALE|F\/|SEX\s*[:\-]?\s*F)\b/.test(upper) || /\bSEX\s*[:\-]?\s*F\b/.test(upper)) {
     gender = 'Female';
   }
+  if (/\bSEX\s*[:\-]?\s*M\b/.test(upper) || /\b[MF]\s+MALE\b/.test(upper)) {
+    gender = 'Male';
+  }
 
+  // ─── Surname / Given Names (from visual bio page labels) ─────────────────────
+  let surname = '';
+  let givenNames = '';
+
+  const surnameMatch = upper.match(/(?:SURNAME|LAST\s*NAME)[:\s]+([A-Z][A-Z\s]+)/);
+  if (surnameMatch) surname = surnameMatch[1].trim().split('\n')[0].trim();
+
+  const givenMatch = upper.match(/(?:GIVEN\s*NAME[S]?|FIRST\s*NAME|NAME\s*\(S\))[:\s]+([A-Z][A-Z\s]+)/);
+  if (givenMatch) givenNames = givenMatch[1].trim().split('\n')[0].trim();
+
+  // ─── Full Name ───────────────────────────────────────────────────────────────
   let fullName = '';
-  const nameMatch = upper.match(/(?:NAME|FULL NAME|SURNAME|GIVEN NAMES)[\s:]+([A-Z\s]+)/);
-  if (nameMatch) {
-    fullName = nameMatch[1].trim().split('\n')[0];
+  if (surname && givenNames) {
+    fullName = `${givenNames} ${surname}`.trim();
+  } else if (surname) {
+    fullName = surname;
+  } else if (givenNames) {
+    fullName = givenNames;
+  }
+
+  // Fallback: look for "NAME: XYZ" pattern
+  if (!fullName) {
+    const nameMatch = upper.match(/(?:^|\n)\s*NAME\s*[:\-]?\s*([A-Z][A-Z\s]{5,50})(?:\n|$)/m);
+    if (nameMatch) fullName = nameMatch[1].trim();
+  }
+
+  // ─── Father's Name ────────────────────────────────────────────────────────────
+  // Indian passports list father on the observation/last page
+  let fatherName = '';
+  const fatherPatterns = [
+    /(?:FATHER['\u2019S]?\s*(?:NAME|:|\/))[:\s\/]*([A-Z][A-Z\s]{3,60})/,
+    /(?:FATHER\s+NAME)[:\s]*([A-Z][A-Z\s]{3,60})/,
+    /(?:FATHER[:\s]+)([A-Z][A-Z\s]{3,60})/,
+    /(?:F\/NAME|F\.NAME)[:\s]+([A-Z][A-Z\s]{3,60})/,
+  ];
+  for (const pattern of fatherPatterns) {
+    const m = upper.match(pattern);
+    if (m) {
+      fatherName = m[1].trim().split('\n')[0].trim();
+      break;
+    }
+  }
+
+  // Indian passport observation page specific: the line after "MOHAMMED JAVEED" as father
+  // Try to find observation page names: typically the first full-caps multi-word name after
+  // "EMIGRATION CHECK" or "ECNR" that isn't the passport holder's own name
+  if (!fatherName) {
+    // Look for line containing "FATHER" or "JAVEED" followed by surname pattern
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('FATHER') || lines[i].includes('F/NAME')) {
+        const nextLine = lines[i + 1] || '';
+        if (/^[A-Z]{2,}(\s[A-Z]{2,})+$/.test(nextLine)) {
+          fatherName = nextLine.trim();
+          break;
+        }
+        // Name might be inline
+        const inline = lines[i].replace(/FATHER['\u2019S]?\s*(NAME)?[:\s\/]*/i, '').trim();
+        if (inline.length > 3 && /^[A-Z\s]+$/.test(inline)) {
+          fatherName = inline;
+          break;
+        }
+      }
+    }
+  }
+
+  // ─── Place of Issue ───────────────────────────────────────────────────────────
+  let placeOfIssue = '';
+  const issueLocationPatterns = [
+    /(?:PLACE\s*OF\s*ISSUE|ISSUED?\s*AT|ISSUED?\s*FROM)[:\s]+([A-Z][A-Z\s,]+)/,
+    /(?:PLACE\s*OF\s*ISSU)[:\s]+([A-Z][A-Z\s,]+)/,
+  ];
+  for (const pattern of issueLocationPatterns) {
+    const m = upper.match(pattern);
+    if (m) {
+      placeOfIssue = m[1].trim().split('\n')[0].trim();
+      // Clean trailing filler words
+      placeOfIssue = placeOfIssue.replace(/\b(MAHARASHTRA|INDIA|REPUBLIC|OF|PASSPORT)\b.*$/, '').trim();
+      if (!placeOfIssue.includes('MAHARASHTRA')) {
+        // Try to keep MAHARASHTRA if it was the state
+        const stateMatch = m[1].match(/([A-Z]+(?:\s[A-Z]+)?)[,\s]+(?:MAHARASHTRA|INDIA)/);
+        if (stateMatch) placeOfIssue = stateMatch[1].trim();
+      }
+      break;
+    }
+  }
+
+  // Fallback: if "MUMBAI" or another city appears after an issue date context
+  if (!placeOfIssue) {
+    const cityMatch = upper.match(/(?:\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4})\s*\n?\s*([A-Z]{4,20}(?:[,\s][A-Z]{4,20})?)/);
+    if (cityMatch) placeOfIssue = cityMatch[1].trim();
+  }
+
+  // ─── Place of Birth ───────────────────────────────────────────────────────────
+  let placeOfBirth = '';
+  const birthLocationPatterns = [
+    /(?:PLACE\s*OF\s*BIRTH|BIRTH\s*PLACE)[:\s]+([A-Z][A-Z\s,]+)/,
+    /(?:BORN\s*IN|BORN\s*AT)[:\s]+([A-Z][A-Z\s,]+)/,
+  ];
+  for (const pattern of birthLocationPatterns) {
+    const m = upper.match(pattern);
+    if (m) {
+      placeOfBirth = m[1].trim().split('\n')[0].trim();
+      break;
+    }
   }
 
   return {
     passportNumber,
     dateOfBirth,
     expiryDate,
+    issueDate,
     gender,
     fullName,
+    surname,
+    givenNames,
+    fatherName,
+    placeOfIssue,
+    placeOfBirth,
   };
 }
 
@@ -166,15 +363,17 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
 
   if (!cleanL1.startsWith('P')) return null;
 
-  // Line 1 Parsing: P<CCC...SURNAME<<GIVEN<NAMES<<<<
+  // ─── Line 1: P<CCC...SURNAME<<GIVEN<NAMES<<<<< ───────────────────────────────
   const countryCode = cleanL1.slice(2, 5);
   const nameField = cleanL1.slice(5);
   const nameParts = nameField.split('<<');
   const surname = (nameParts[0] || '').replace(/</g, ' ').trim();
-  const givenNames = (nameParts[1] || '').replace(/</g, ' ').trim();
-  const fullName = surname && givenNames ? `${givenNames} ${surname}` : surname || givenNames || '';
+  // Given names: join with space, remove trailing filler, trim
+  const givenNamesRaw = (nameParts[1] || '').replace(/</g, ' ').replace(/\s+/g, ' ').trim();
+  // Remove any trailing partial word fragments from truncation (last "word" may be cut off)
+  const fullName = surname && givenNamesRaw ? `${givenNamesRaw} ${surname}` : surname || givenNamesRaw || '';
 
-  // Line 2 Parsing:
+  // ─── Line 2: Passport No + check + Country + DOB + check + Sex + Expiry + check ─
   const passNo = cleanL2.slice(0, 9).replace(/</g, '');
   const passCheckStr = cleanL2[9];
   const passCheck = parseInt(passCheckStr, 10);
@@ -201,11 +400,7 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
 
   const mrzValid = passValid && dobValid && expValid;
 
-  // STRICT FIELD CONFIDENCE ENGINE:
-  // - MRZ Checksum Match: +40%
-  // - Regex Format Valid: +30%
-  // - Non-Empty Value: +20%
-  // - Verified Field Match: +10%
+  // ─── Confidence Engine ────────────────────────────────────────────────────────
   const calculateFieldConfidence = (
     val: string,
     checksumPassed: boolean,
@@ -227,16 +422,12 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
 
     const formatValid = formatRegex.test(val);
     let score = 0;
-
     if (checksumPassed) score += 40;
     if (formatValid) score += 30;
     if (val.length >= 3) score += 20;
     if (mrzValid) score += 10;
 
-    // Cap confidence if MRZ checksum failed
-    if (!checksumPassed && score > 45) {
-      score = 45;
-    }
+    if (!checksumPassed && score > 45) score = 45;
 
     return {
       value: val,
@@ -245,46 +436,43 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
       checksumPassed,
       formatValid,
       reason: checksumPassed
-        ? `${label} verified via MRZ Modulo-10 checksum algorithm.`
-        : `${label} extracted but MRZ checksum validation failed or unverified.`,
+        ? `${label} verified via MRZ Modulo-10 checksum.`
+        : `${label} extracted but MRZ checksum unverified.`,
       boundingBox: bbox,
     };
   };
 
-  const passField = calculateFieldConfidence(
-    passNo,
-    passValid,
-    /^[A-Z0-9]{7,9}$/,
-    'Passport Number',
-    { x: 5, y: 70, width: 25, height: 10 }
-  );
+  const makeVisualField = (
+    val: string,
+    label: string,
+    score: number,
+    bbox: { x: number; y: number; width: number; height: number }
+  ): FieldConfidence => ({
+    value: val,
+    score: val ? score : 0,
+    tier: getConfidenceTier(val ? score : 0),
+    checksumPassed: false,
+    formatValid: Boolean(val && val.length > 1),
+    reason: val ? `${label} extracted from visual document text.` : `${label} not found in document.`,
+    boundingBox: bbox,
+  });
 
+  const passField = calculateFieldConfidence(passNo, passValid, /^[A-Z0-9]{7,9}$/, 'Passport Number', { x: 5, y: 70, width: 25, height: 10 });
   const dobFormatted = formatMrzDate(dobStr);
-  const dobField = calculateFieldConfidence(
-    dobFormatted,
-    dobValid,
-    /^\d{4}-\d{2}-\d{2}$/,
-    'Date of Birth',
-    { x: 30, y: 70, width: 20, height: 10 }
-  );
-
+  const dobField = calculateFieldConfidence(dobFormatted, dobValid, /^\d{4}-\d{2}-\d{2}$/, 'Date of Birth', { x: 30, y: 70, width: 20, height: 10 });
   const expFormatted = formatMrzDate(expStr);
-  const expField = calculateFieldConfidence(
-    expFormatted,
-    expValid,
-    /^\d{4}-\d{2}-\d{2}$/,
-    'Expiry Date',
-    { x: 55, y: 70, width: 20, height: 10 }
-  );
+  const expField = calculateFieldConfidence(expFormatted, expValid, /^\d{4}-\d{2}-\d{2}$/, 'Expiry Date', { x: 55, y: 70, width: 20, height: 10 });
 
-  const nameFieldScore = fullName ? (mrzValid ? 98 : 75) : 0;
+  const nameFieldScore = fullName ? (mrzValid ? 90 : 70) : 0;
   const nameConfidence: FieldConfidence = {
     value: fullName,
     score: nameFieldScore,
     tier: getConfidenceTier(nameFieldScore),
     checksumPassed: mrzValid,
     formatValid: Boolean(fullName && fullName.length > 2),
-    reason: fullName ? 'Full Name extracted from MRZ Line 1' : 'Name unreadable in MRZ',
+    reason: fullName
+      ? 'Name from MRZ Line 1 — may be truncated if long; visual text will override.'
+      : 'Name unreadable in MRZ',
     boundingBox: { x: 5, y: 15, width: 50, height: 15 },
   };
 
@@ -305,12 +493,17 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
     tier: getConfidenceTier(rawSex === 'M' || rawSex === 'F' ? 95 : 50),
     checksumPassed: true,
     formatValid: rawSex === 'M' || rawSex === 'F',
-    reason: `Gender char '${rawSex}' parsed`,
+    reason: `Sex character '${rawSex}' parsed from MRZ position 20`,
     boundingBox: { x: 50, y: 35, width: 10, height: 10 },
   };
 
-  // Overall Document Confidence: Capped at weakest critical field
-  const mandatoryScores = [passField.score, dobField.score, expField.score, nameConfidence.score];
+  // Visual-only fields — will be enriched by fieldExtractor after OCR
+  const fatherField = makeVisualField('', 'Father\'s Name', 72, { x: 5, y: 45, width: 50, height: 10 });
+  const issueDateField = makeVisualField('', 'Issue Date', 72, { x: 5, y: 55, width: 25, height: 10 });
+  const placeOfIssueField = makeVisualField('', 'Place of Issue', 72, { x: 30, y: 55, width: 30, height: 10 });
+  const placeOfBirthField = makeVisualField('', 'Place of Birth', 70, { x: 5, y: 60, width: 30, height: 10 });
+
+  const mandatoryScores = [passField.score, dobField.score, expField.score];
   const overallConfidenceScore = Math.min(...mandatoryScores);
 
   return {
@@ -320,6 +513,10 @@ export function parseTd3MrzLines(line1: string, line2: string): ParsedPassportMr
     date_of_birth: dobField,
     gender: genderConfidence,
     expiry_date: expField,
+    father_name: fatherField,
+    issue_date: issueDateField,
+    place_of_issue: placeOfIssueField,
+    place_of_birth: placeOfBirthField,
     mrzValid,
     mrzRawLine1: cleanL1,
     mrzRawLine2: cleanL2,
