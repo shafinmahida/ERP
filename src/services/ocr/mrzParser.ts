@@ -172,7 +172,30 @@ export function extractPassportMrzFromText(rawText: string): { line1: string; li
  * to extract all fields that MRZ cannot provide: father's name, issue date,
  * place of issue, place of birth, and the full untruncated name.
  */
-export function extractVisualPassportFields(rawText: string) {
+// Words that should never be treated as a person's name
+const PLACE_AND_DOC_BLACKLIST = new Set([
+  'MUMBAI', 'MAHARASHTRA', 'INDIA', 'REPUBLIC', 'EMIGRATION', 'REQUIRED',
+  'CHECK', 'NATIONAL', 'INTERNATIONAL', 'PASSPORT', 'DELHI', 'HYDERABAD',
+  'KOLKATA', 'CHENNAI', 'BANGALORE', 'AHMEDABAD', 'PUNE', 'SURAT',
+  'GUJARAT', 'RAJASTHAN', 'KARNATAKA', 'KERALA', 'TAMILNADU',
+  'UTTAR', 'PRADESH', 'HARYANA', 'PUNJAB', 'HIMACHAL',
+  'ECNR', 'ECNR', 'NOTE', 'HOLDER', 'DECLARED',
+]);
+
+function isLikelyPersonName(line: string): boolean {
+  const words = line.trim().split(/\s+/);
+  // Must have at least 3 words (Indian full names are typically 3-4 words)
+  if (words.length < 3) return false;
+  // All words must be alpha only (no digits, no special chars)
+  if (!words.every((w) => /^[A-Z]{2,}$/.test(w))) return false;
+  // Must not contain any blacklisted place/doc words
+  if (words.some((w) => PLACE_AND_DOC_BLACKLIST.has(w))) return false;
+  // Must not be all the same word repeated
+  if (new Set(words).size === 1) return false;
+  return true;
+}
+
+export function extractVisualPassportFields(rawText: string, knownMrzSurname?: string) {
   if (!rawText) {
     return {
       passportNumber: '',
@@ -214,12 +237,23 @@ export function extractVisualPassportFields(rawText: string) {
   const issueMatch = upper.match(/(?:DATE?\s*OF?\s*ISSUE|DATE?\s*OF?\s*ISSU|ISSUED?\s*ON|ISSUED?)[^\d]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})/);
   if (issueMatch) issueDate = normalizeVisualDate(issueMatch[1]);
 
-  // If labelled dates not found, use positional: oldest date = issue, middle = DOB, newest = expiry
+  // Smart date assignment:
+  // - Newest date (furthest in future) = expiry
+  // - Oldest date (furthest in past, could be DOB from 1900s-2010s) = DOB
+  // - Remaining middle date(s) = issue date (passports issued 2000-present)
   if ((!dateOfBirth || !expiryDate || !issueDate) && allDates.length >= 2) {
-    const sorted = [...allDates].sort();
-    if (!dateOfBirth) dateOfBirth = sorted[Math.floor(sorted.length / 2)] || '';
+    const sorted = [...allDates].sort(); // ISO sort = chronological
     if (!expiryDate) expiryDate = sorted[sorted.length - 1] || '';
-    if (!issueDate && sorted.length >= 3) issueDate = sorted[0] || '';
+    if (!dateOfBirth) dateOfBirth = sorted[0] || '';
+    // Issue date: the date that is NOT the oldest (DOB) and NOT the newest (expiry),
+    // i.e. a middle date that falls in a realistic passport issuance range (>= 2000)
+    if (!issueDate) {
+      const candidates = sorted
+        .filter((d) => d !== dateOfBirth && d !== expiryDate)
+        .filter((d) => d >= '2000-01-01'); // passports not issued before 2000 for this ERP
+      // Pick the most recent candidate (closest to today) as the issue date
+      issueDate = candidates[candidates.length - 1] || '';
+    }
   }
 
   // ─── Gender ──────────────────────────────────────────────────────────────────
@@ -257,6 +291,18 @@ export function extractVisualPassportFields(rawText: string) {
     if (nameMatch) fullName = nameMatch[1].trim();
   }
 
+  // Final strategy: if we have the MRZ surname, search all text lines for a line
+  // containing the surname — this catches the untruncated visual bio page name
+  if (knownMrzSurname && (!fullName || fullName.length < 15)) {
+    const surnameUpper = knownMrzSurname.toUpperCase();
+    const matchingLines = lines
+      .filter((l) => l.includes(surnameUpper) && isLikelyPersonName(l))
+      .sort((a, b) => b.length - a.length); // longest first (most complete name)
+    if (matchingLines.length > 0) {
+      fullName = matchingLines[0];
+    }
+  }
+
   // ─── Father's Name ────────────────────────────────────────────────────────────
   // Indian passports list father on the observation/last page
   let fatherName = '';
@@ -278,21 +324,37 @@ export function extractVisualPassportFields(rawText: string) {
   // Try to find observation page names: typically the first full-caps multi-word name after
   // "EMIGRATION CHECK" or "ECNR" that isn't the passport holder's own name
   if (!fatherName) {
-    // Look for line containing "FATHER" or "JAVEED" followed by surname pattern
+    // Look for FATHER keyword then get name from same or next line
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].includes('FATHER') || lines[i].includes('F/NAME')) {
-        const nextLine = lines[i + 1] || '';
-        if (/^[A-Z]{2,}(\s[A-Z]{2,})+$/.test(nextLine)) {
-          fatherName = nextLine.trim();
+        // Check next line for a valid person name
+        const nextLine = (lines[i + 1] || '').trim();
+        if (isLikelyPersonName(nextLine)) {
+          fatherName = nextLine;
           break;
         }
-        // Name might be inline
-        const inline = lines[i].replace(/FATHER['\u2019S]?\s*(NAME)?[:\s\/]*/i, '').trim();
-        if (inline.length > 3 && /^[A-Z\s]+$/.test(inline)) {
+        // Name might be inline after the FATHER keyword
+        const inline = lines[i].replace(/FATHER['\u2019S]*\s*(NAME)?[:\s\/]*/i, '').trim();
+        if (isLikelyPersonName(inline)) {
           fatherName = inline;
           break;
         }
       }
+    }
+  }
+
+  // Strategy 3: On Indian passport observation pages, scan all name-like lines
+  // Father's name is the FIRST valid person-name line that isn't the holder
+  if (!fatherName) {
+    const holderSurname = knownMrzSurname ? knownMrzSurname.toUpperCase() : '';
+    for (const nameLine of lines) {
+      if (!isLikelyPersonName(nameLine)) continue;
+      // Skip if this is the holder's own name (contains holder surname)
+      if (holderSurname && nameLine.includes(holderSurname)) continue;
+      // Skip common document headers that pass the name test
+      if (/EMIGRATION|REQUIRED|NATIONAL|ECNR/.test(nameLine)) continue;
+      fatherName = nameLine;
+      break;
     }
   }
 

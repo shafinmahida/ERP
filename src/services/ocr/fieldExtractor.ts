@@ -215,7 +215,14 @@ export async function processPassportScan(
     }
 
     // Always extract visual fields to supplement MRZ
-    const visualFields = extractVisualPassportFields(combinedRawText);
+    // Pass the MRZ-derived surname so the visual extractor can:
+    // (a) search for a longer untruncated name containing the surname in visual text
+    // (b) skip the holder's name when detecting the father's name on the observation page
+    const mrzSurname = parsedMrz
+      ? (parsedMrz.full_name.value.split(' ').slice(-1)[0] || '')  // last word = surname
+      : '';
+    const visualFields = extractVisualPassportFields(combinedRawText, mrzSurname);
+
 
     // If we found a valid MRZ — merge visual fields in and select this as best
     if (parsedMrz && parsedMrz.mrzValid) {
