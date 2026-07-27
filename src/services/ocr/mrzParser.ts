@@ -184,10 +184,12 @@ const PLACE_AND_DOC_BLACKLIST = new Set([
 
 function isLikelyPersonName(line: string): boolean {
   const words = line.trim().split(/\s+/);
-  // Must have at least 3 words (Indian full names are typically 3-4 words)
+  // Must have at least 3 words
   if (words.length < 3) return false;
-  // All words must be alpha only (no digits, no special chars)
-  if (!words.every((w) => /^[A-Z]{2,}$/.test(w))) return false;
+  // All words must be alpha only AND at least 3 chars each (filters OCR noise: YY, AE, AY)
+  if (!words.every((w) => /^[A-Z]{3,}$/.test(w))) return false;
+  // At least one word must be >= 4 chars (real name segment: MOHAMMED, JAVEED, etc.)
+  if (!words.some((w) => w.length >= 4)) return false;
   // Must not contain any blacklisted place/doc words
   if (words.some((w) => PLACE_AND_DOC_BLACKLIST.has(w))) return false;
   // Must not be all the same word repeated
@@ -291,15 +293,38 @@ export function extractVisualPassportFields(rawText: string, knownMrzSurname?: s
     if (nameMatch) fullName = nameMatch[1].trim();
   }
 
-  // Final strategy: if we have the MRZ surname, search all text lines for a line
-  // containing the surname — this catches the untruncated visual bio page name
+  // Smart surname-based full name recovery:
+  // Indian passport bio pages often list surname and given names on SEPARATE lines.
+  // Strategy:
+  //   1. Try to find a text line containing the MRZ surname (most reliable — direct match)
+  //   2. If not found, find the longest valid name-like line and append MRZ surname
+  //      (handles bio pages where OCR reads given names without surname on same line)
   if (knownMrzSurname && (!fullName || fullName.length < 15)) {
     const surnameUpper = knownMrzSurname.toUpperCase();
-    const matchingLines = lines
+
+    // Try 1: line that contains the exact surname
+    const withSurname = lines
       .filter((l) => l.includes(surnameUpper) && isLikelyPersonName(l))
-      .sort((a, b) => b.length - a.length); // longest first (most complete name)
-    if (matchingLines.length > 0) {
-      fullName = matchingLines[0];
+      .sort((a, b) => b.length - a.length);
+
+    if (withSurname.length > 0) {
+      fullName = withSurname[0];
+    } else {
+      // Try 2: find the longest valid given-name line (doesn't have the surname)
+      // and append the MRZ surname to reconstruct the full name
+      const givenNameLines = lines
+        .filter((l) => isLikelyPersonName(l))
+        .sort((a, b) => b.length - a.length);
+
+      if (givenNameLines.length > 0) {
+        const bestGivenLine = givenNameLines[0];
+        // Only combine if the surname isn't already at the end
+        if (!bestGivenLine.endsWith(surnameUpper)) {
+          fullName = `${bestGivenLine} ${surnameUpper}`;
+        } else {
+          fullName = bestGivenLine;
+        }
+      }
     }
   }
 
