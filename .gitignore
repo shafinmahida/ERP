@@ -1,5 +1,29 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+coverage/
+
+# Tauri Rust binaries & schemas
 src-tauri/target/
-*.log
+src-tauri/gen/
+
+# SQLite Databases & User Data Folders
+*.db
+*.sqlite
+*.sqlite3
+Dayar-E-Habib Data/
+Documents/
+Backups/
+Logs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE & OS files
+.vscode/settings.json
 .DS_Store
+*.log
