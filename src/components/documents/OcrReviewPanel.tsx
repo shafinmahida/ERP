@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { ShieldAlert, CheckCircle2, RotateCw, Sparkles, X, AlertTriangle, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldAlert, CheckCircle2, RotateCw, Sparkles, X, AlertTriangle, Eye, Navigation } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label, Badge } from '../ui/card';
 import { OcrExtractionResult } from '../../services/ocr/fieldExtractor';
-import { ConfidenceTier, FieldConfidence } from '../../services/ocr/mrzParser';
+import { ConfidenceTier, FieldConfidence, ParsedPassportMrz } from '../../services/ocr/mrzParser';
 
 interface OcrReviewPanelProps {
   isOpen: boolean;
@@ -24,6 +24,30 @@ interface OcrReviewPanelProps {
   onRotateScan: () => void;
 }
 
+const emptyField: FieldConfidence = {
+  value: '',
+  score: 0,
+  tier: 'Low',
+  checksumPassed: false,
+  formatValid: false,
+  reason: 'Unreadable or missing in document',
+};
+
+const defaultParsedPassport: ParsedPassportMrz = {
+  full_name: { ...emptyField, reason: 'Name unreadable' },
+  passport_number: { ...emptyField, reason: 'Passport Number unreadable' },
+  nationality: { ...emptyField, value: 'Pakistani', reason: 'Default nationality' },
+  date_of_birth: { ...emptyField, reason: 'DOB unreadable' },
+  gender: { ...emptyField, value: 'Male', reason: 'Default gender' },
+  expiry_date: { ...emptyField, reason: 'Expiry Date unreadable' },
+  mrzValid: false,
+  mrzRawLine1: '',
+  mrzRawLine2: '',
+  documentType: 'Passport',
+  overallConfidenceScore: 0,
+  overallConfidenceTier: 'Low',
+};
+
 export function OcrReviewPanel({
   isOpen,
   onClose,
@@ -31,9 +55,9 @@ export function OcrReviewPanel({
   onConfirmScannedFields,
   onRotateScan,
 }: OcrReviewPanelProps) {
-  if (!isOpen || !ocrResult || !ocrResult.parsedPassport) return null;
+  if (!isOpen || !ocrResult) return null;
 
-  const parsed = ocrResult.parsedPassport;
+  const parsed = ocrResult.parsedPassport || defaultParsedPassport;
   const diag = ocrResult.diagnosticMetadata;
 
   const [editableName, setEditableName] = useState(parsed.full_name.value);
@@ -46,8 +70,20 @@ export function OcrReviewPanel({
   const [activeTab, setActiveTab] = useState<'parsed' | 'rawText' | 'rawMrz'>('parsed');
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (ocrResult && ocrResult.parsedPassport) {
+      const p = ocrResult.parsedPassport;
+      setEditableName(p.full_name.value);
+      setEditablePassportNo(p.passport_number.value);
+      setEditableNationality(p.nationality.value);
+      setEditableDob(p.date_of_birth.value);
+      setEditableGender(p.gender.value);
+      setEditableExpiry(p.expiry_date.value);
+    }
+  }, [ocrResult]);
+
   const getTierBadge = (confidence: FieldConfidence) => {
-    const { tier, score, checksumPassed, hasDiscrepancy } = confidence;
+    const { tier, score, hasDiscrepancy } = confidence;
 
     if (hasDiscrepancy) {
       return <Badge variant="destructive" className="animate-pulse">⚠ Discrepancy ({score}%)</Badge>;
@@ -117,6 +153,13 @@ export function OcrReviewPanel({
               Overall Confidence: <strong>{parsed.overallConfidenceScore}% ({parsed.overallConfidenceTier})</strong>
             </span>
           </div>
+
+          {diag.detectedRotationAngle !== 0 && (
+            <div className="rounded-lg border border-blue-500/40 bg-blue-950/30 p-2 text-xs text-blue-300 flex items-center gap-2">
+              <Navigation className="h-4 w-4 text-blue-400" />
+              <span>Auto-Oriented Sideways Scan: Corrected by <strong>{diag.detectedRotationAngle}°</strong> for MRZ alignment.</span>
+            </div>
+          )}
         </DialogHeader>
 
         {/* Side-by-Side Review Grid */}
@@ -148,7 +191,6 @@ export function OcrReviewPanel({
                     alt="Passport Scan"
                     className="w-full h-auto rounded-lg object-contain max-h-[360px]"
                   />
-                  {/* Interactive Dynamic Bounding Box Overlay */}
                   {activeBbox && (
                     <div
                       className="absolute border-2 border-emerald-400 bg-emerald-500/20 rounded shadow-lg transition-all duration-300 flex items-center justify-center"
@@ -170,7 +212,7 @@ export function OcrReviewPanel({
               )}
             </div>
 
-            {/* Tab navigation */}
+            {/* Tab Navigation */}
             <div className="flex border-b border-slate-800 text-xs">
               <button
                 type="button"

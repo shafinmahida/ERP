@@ -168,6 +168,9 @@ export function CustomerFormModal({
     onClose();
   };
 
+  const [scanRotationAngle, setScanRotationAngle] = useState(0);
+  const [currentScanImage, setCurrentScanImage] = useState<HTMLImageElement | null>(null);
+
   const handlePassportScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -177,12 +180,30 @@ export function CustomerFormModal({
       const img = new Image();
       img.src = URL.createObjectURL(file);
       await img.decode();
+      setCurrentScanImage(img);
 
-      const res = await processPassportScan(img);
+      const res = await processPassportScan(img, 0);
       setOcrResult(res);
+      setScanRotationAngle(res.diagnosticMetadata.detectedRotationAngle);
       setShowOcrPanel(true);
     } catch (err: any) {
       alert('OCR Scan failed: ' + err.message);
+      setShowOcrPanel(false);
+    } finally {
+      setIsProcessingOcr(false);
+    }
+  };
+
+  const handleRotateScan = async () => {
+    if (!currentScanImage) return;
+    const newAngle = (scanRotationAngle + 90) % 360;
+    setScanRotationAngle(newAngle);
+    setIsProcessingOcr(true);
+    try {
+      const res = await processPassportScan(currentScanImage, newAngle);
+      setOcrResult(res);
+    } catch (e) {
+      console.error('Failed to re-evaluate rotated image:', e);
     } finally {
       setIsProcessingOcr(false);
     }
@@ -198,7 +219,9 @@ export function CustomerFormModal({
       passport_number: scanned.passport_number || watch('passport_number'),
       expiry_date: scanned.expiry_date || watch('expiry_date'),
     });
+    setShowOcrPanel(false);
   };
+
 
   if (!isOpen) return null;
 
@@ -415,16 +438,9 @@ export function CustomerFormModal({
         onClose={() => setShowOcrPanel(false)}
         ocrResult={ocrResult}
         onConfirmScannedFields={handleConfirmOcrFields}
-        onRotateScan={async () => {
-          if (ocrResult) {
-            const updated = await processPassportScan(
-              ocrResult.preprocessedImage.workingCanvas || new Image(),
-              90
-            );
-            setOcrResult(updated);
-          }
-        }}
+        onRotateScan={handleRotateScan}
       />
+
 
       {/* Identity Document Vault Modal */}
       {editingCustomer && editingCustomer.identities.length > 0 && (
