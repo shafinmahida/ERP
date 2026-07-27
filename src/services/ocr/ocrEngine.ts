@@ -4,10 +4,12 @@
  * ARCHITECTURAL INTEGRITY RULES:
  * 1. ZERO mock, hardcoded, dummy, fallback, or sample identity data.
  * 2. Every extracted character MUST originate directly from the actual image.
- * 3. Uses Tesseract.js engine or Tauri Rust IPC backend for real image text recognition.
+ * 3. Uses a singleton Tesseract.js worker (initialized once, reused for all scans)
+ *    to avoid re-downloading language packs on every rotation attempt.
+ * 4. Falls back to Tauri Rust IPC backend if running in desktop shell.
  */
 
-import { createWorker } from 'tesseract.js';
+import { createWorker, Worker } from 'tesseract.js';
 
 export interface OcrEngineOutput {
   rawText: string;
@@ -17,6 +19,41 @@ export interface OcrEngineOutput {
   processedAt: string;
   averageConfidence: number;
 }
+
+// ─── Singleton Tesseract Worker ───────────────────────────────────────────────
+// The worker is created once and reused for all scan operations.
+// This prevents re-downloading 10MB language packs on every rotation attempt.
+let _workerInstance: Worker | null = null;
+let _workerInitializing: Promise<Worker> | null = null;
+
+async function getTesseractWorker(): Promise<Worker> {
+  if (_workerInstance) return _workerInstance;
+
+  // If already being initialized (e.g. concurrent calls), await the in-flight promise
+  if (_workerInitializing) return _workerInitializing;
+
+  _workerInitializing = createWorker('eng', 1, {
+    // Use local cache dir to avoid re-downloading
+    cacheMethod: 'write',
+    gzip: true,
+  }).then((w) => {
+    _workerInstance = w;
+    _workerInitializing = null;
+    return w;
+  });
+
+  return _workerInitializing;
+}
+
+// Call this when the app unmounts (optional clean-up)
+export async function terminateTesseractWorker() {
+  if (_workerInstance) {
+    await _workerInstance.terminate();
+    _workerInstance = null;
+  }
+}
+
+// ─── Main OCR Entry Point ─────────────────────────────────────────────────────
 
 export async function runOfflineOcr(imageDataUrl: string): Promise<OcrEngineOutput> {
   const processedAt = new Date().toISOString();
@@ -48,15 +85,14 @@ export async function runOfflineOcr(imageDataUrl: string): Promise<OcrEngineOutp
         };
       }
     } catch (e) {
-      console.warn('Tauri Rust backend OCR IPC command returned empty/unhandled, running Tesseract.js engine:', e);
+      console.warn('[OCR] Tauri Rust backend returned empty/failed — falling back to Tesseract.js:', e);
     }
   }
 
-  // Stage 2: Tesseract.js Engine Real Image Character Recognition
+  // Stage 2: Singleton Tesseract.js Engine (reuse worker across all rotation attempts)
   try {
-    const worker = await createWorker('eng');
+    const worker = await getTesseractWorker();
     const ret = await worker.recognize(imageDataUrl);
-    await worker.terminate();
 
     const rawText = ret.data.text || '';
     const lines = rawText
@@ -75,7 +111,9 @@ export async function runOfflineOcr(imageDataUrl: string): Promise<OcrEngineOutp
       averageConfidence: Math.round(averageConfidence),
     };
   } catch (err) {
-    console.error('Tesseract.js OCR execution error:', err);
+    console.error('[OCR] Tesseract.js engine error:', err);
+    // Reset worker on error so next call gets a fresh one
+    _workerInstance = null;
     return {
       rawText: '',
       lines: [],

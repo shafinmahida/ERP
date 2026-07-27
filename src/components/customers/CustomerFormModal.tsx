@@ -227,8 +227,22 @@ export function CustomerFormModal({
 
   return (
     <>
-      <Dialog open={isOpen && !showDuplicateModal && !showOcrPanel} onOpenChange={onClose}>
-        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-slate-100 p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={isOpen && !showDuplicateModal} onOpenChange={onClose}>
+
+
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-slate-100 p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto relative">
+          {/* OCR Processing Overlay — shows while Tesseract is initializing */}
+          {isProcessingOcr && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-2xl bg-slate-950/90 backdrop-blur-sm gap-4">
+              <div className="relative flex items-center justify-center">
+                <div className="h-16 w-16 rounded-full border-4 border-slate-700 border-t-emerald-400 animate-spin" />
+                <Sparkles className="absolute h-6 w-6 text-emerald-400 animate-pulse" />
+              </div>
+              <p className="text-sm font-semibold text-emerald-300">Scanning Passport with AI OCR Engine…</p>
+              <p className="text-xs text-slate-400">Testing multiple orientations for best MRZ alignment</p>
+            </div>
+          )}
+
           <DialogHeader className="flex flex-row items-center justify-between">
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <User className="h-5 w-5 text-emerald-400" />
