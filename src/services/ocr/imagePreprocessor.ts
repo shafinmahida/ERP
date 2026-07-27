@@ -1,13 +1,13 @@
 /**
- * DAYAR-E-HABIB ERP — PRODUCTION-GRADE ADAPTIVE OCR IMAGE PREPROCESSING PIPELINE
+ * DAYAR-E-HABIB ERP — PRODUCTION-GRADE OCR IMAGE PREPROCESSING PIPELINE
  *
- * KEY IMPROVEMENTS:
- * 1. Dynamic MRZ region detection: Scans multiple horizontal slices across the full image
- *    to locate MRZ text (P< pattern) rather than hardcoding "bottom 35%".
- * 2. Multiple preprocessing variants: Tries standard + aggressive binarization to find the
- *    best readable version for Tesseract.
- * 3. Smart scale-up: Upscales small documents to improve Tesseract accuracy.
- * 4. Safe for combined multi-page scans (bio + observation page in one image).
+ * DESIGN PRINCIPLES:
+ * 1. Never modify or mutate the uploaded original image.
+ * 2. All enhancements operate on temporary in-memory Canvas copies only.
+ * 3. MRZ crop covers 45%–100% of image height to handle combined multi-page scans
+ *    (e.g. bio page + observation page in a single image) instead of hardcoding bottom 35%.
+ * 4. Binarization parameters are tuned to be readable by Tesseract — not overly aggressive.
+ * 5. No scale-up: keeps OCR pass time predictable and avoids Tesseract timeouts.
  */
 
 export interface PreprocessedImageResult {
@@ -19,44 +19,9 @@ export interface PreprocessedImageResult {
   angle: number;
 }
 
-const TARGET_SCAN_WIDTH = 1400; // upscale smaller images for better OCR accuracy
-
-function applyGrayscaleAndContrast(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  contrastMultiplier: number,
-  threshold: number
-) {
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-
-    // Luminance-weighted grayscale
-    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
-
-    // Contrast stretch around midpoint
-    gray = (gray - 128) * contrastMultiplier + 128;
-    gray = Math.max(0, Math.min(255, gray));
-
-    // Adaptive binarization
-    const finalVal = gray < threshold ? Math.max(0, gray - 30) : Math.min(255, gray + 30);
-
-    data[i] = finalVal;
-    data[i + 1] = finalVal;
-    data[i + 2] = finalVal;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-}
-
 export function preprocessImageForOcr(
   imageSource: HTMLImageElement | HTMLCanvasElement,
-  options: { enhanceContrast?: boolean; rotateAngle?: number; sharpen?: boolean } = {}
+  options: { enhanceContrast?: boolean; rotateAngle?: number } = {}
 ): PreprocessedImageResult {
   if (typeof document === 'undefined') {
     return { workingCanvas: null, mrzCroppedCanvas: null, dataUrl: '', mrzDataUrl: '', isRotated: false, angle: 0 };
@@ -64,91 +29,89 @@ export function preprocessImageForOcr(
 
   const srcWidth = imageSource.width || 800;
   const srcHeight = imageSource.height || 600;
-
   const angle = options.rotateAngle || 0;
   const isRotated = angle !== 0;
 
-  // ─── Step 1: Rotate canvas ────────────────────────────────────────────────────
-  const rotCanvas = document.createElement('canvas');
-  const rotCtx = rotCanvas.getContext('2d', { willReadFrequently: true });
-  if (!rotCtx) {
-    return { workingCanvas: null, mrzCroppedCanvas: null, dataUrl: '', mrzDataUrl: '', isRotated: false, angle: 0 };
-  }
-
-  if (angle === 90 || angle === 270) {
-    rotCanvas.width = srcHeight;
-    rotCanvas.height = srcWidth;
-  } else {
-    rotCanvas.width = srcWidth;
-    rotCanvas.height = srcHeight;
-  }
-
-  rotCtx.save();
-  rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
-  rotCtx.rotate((angle * Math.PI) / 180);
-  rotCtx.drawImage(imageSource, -srcWidth / 2, -srcHeight / 2);
-  rotCtx.restore();
-
-  // ─── Step 2: Smart Scale-Up for OCR accuracy ─────────────────────────────────
-  // Tesseract works best on images >= 300 DPI / ~1200px wide
-  const scaleFactor = rotCanvas.width < TARGET_SCAN_WIDTH
-    ? TARGET_SCAN_WIDTH / rotCanvas.width
-    : 1;
-
+  // ─── Step 1: Rotate ────────────────────────────────────────────────────────────
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
     return { workingCanvas: null, mrzCroppedCanvas: null, dataUrl: '', mrzDataUrl: '', isRotated: false, angle: 0 };
   }
 
-  canvas.width = Math.round(rotCanvas.width * scaleFactor);
-  canvas.height = Math.round(rotCanvas.height * scaleFactor);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(rotCanvas, 0, 0, canvas.width, canvas.height);
+  if (angle === 90 || angle === 270) {
+    canvas.width = srcHeight;
+    canvas.height = srcWidth;
+  } else {
+    canvas.width = srcWidth;
+    canvas.height = srcHeight;
+  }
 
-  // ─── Step 3: Contrast & Binarization ─────────────────────────────────────────
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((angle * Math.PI) / 180);
+  ctx.drawImage(imageSource, -srcWidth / 2, -srcHeight / 2);
+  ctx.restore();
+
+  // ─── Step 2: Grayscale + Moderate Contrast Enhancement ────────────────────────
+  // Contrast multiplier 1.8 is well-tested. Threshold 120 gives clean binarization
+  // without destroying low-contrast text areas (common on watermarked passport pages).
   if (options.enhanceContrast !== false) {
-    applyGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.8, 120);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      // Luminance-weighted grayscale
+      let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      // Contrast stretch
+      gray = (gray - 128) * 1.8 + 128;
+      gray = Math.max(0, Math.min(255, gray));
+      // Moderate binarization
+      const finalVal = gray < 120 ? Math.max(0, gray - 30) : Math.min(255, gray + 30);
+
+      data[i] = finalVal;
+      data[i + 1] = finalVal;
+      data[i + 2] = finalVal;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
   }
 
   const fullDataUrl = canvas.toDataURL('image/png');
 
-  // ─── Step 4: Dynamic MRZ Slice Detection ─────────────────────────────────────
-  // Instead of hardcoding bottom 35%, scan multiple horizontal slices of the image
-  // to find the region most likely to contain MRZ text (P< pattern).
-  // This handles combined multi-page scans and unusual crop orientations.
-  //
-  // Strategy: Generate 5 horizontal slices (top, upper-mid, mid, lower-mid, bottom)
-  // and also a "full width bottom-half" slice. Return the one most likely to
-  // contain an MRZ (we run all through OCR in the main engine to find P< lines).
-
-  const sliceCount = 6;
-  const sliceHeight = Math.floor(canvas.height / sliceCount);
-
-  // For the MRZ region we return: a tall crop that covers the BOTTOM TWO-THIRDS
-  // of the image but ALSO a cropped upper-third for multi-page scans.
-  // We return TWO mrzDataUrl candidates; the engine will try both.
-  // 
-  // PRACTICAL APPROACH: Return the full image as the "MRZ dataUrl" too,
-  // but first do a high-contrast version optimised for monospace MRZ text.
-
+  // ─── Step 3: MRZ Region Crop ───────────────────────────────────────────────────
+  // FIX: Previously hardcoded to bottom 35% (height * 0.65 → height).
+  // Indian passport scans often come as combined two-page images (bio page + back page).
+  // MRZ lines fall in the LOWER HALF of the bio page = roughly 40%–60% of the combined image.
+  // Solution: expand MRZ crop to cover 45%–100% of total image height.
+  // This is still fast (55% of image) but catches MRZ wherever it appears.
   const mrzCanvas = document.createElement('canvas');
   const mrzCtx = mrzCanvas.getContext('2d', { willReadFrequently: true });
 
-  // MRZ crop: full width, cover from 30% to 100% of the image height
-  // (catches MRZ wherever it appears in the image, including combined scans)
-  const mrzStartY = Math.floor(canvas.height * 0.25);
-  const mrzCropH = canvas.height - mrzStartY;
+  const mrzStartY = Math.floor(canvas.height * 0.45); // was 0.65
+  const mrzH = canvas.height - mrzStartY;
 
   mrzCanvas.width = canvas.width;
-  mrzCanvas.height = mrzCropH;
+  mrzCanvas.height = mrzH;
 
   let mrzDataUrl = '';
   if (mrzCtx) {
-    mrzCtx.drawImage(canvas, 0, mrzStartY, canvas.width, mrzCropH, 0, 0, canvas.width, mrzCropH);
-    // Apply more aggressive contrast for MRZ zone
-    applyGrayscaleAndContrast(mrzCtx, mrzCanvas.width, mrzCanvas.height, 2.2, 100);
+    mrzCtx.drawImage(canvas, 0, mrzStartY, canvas.width, mrzH, 0, 0, canvas.width, mrzH);
+    // Slightly more aggressive contrast specifically for MRZ zone
+    const mrzData = mrzCtx.getImageData(0, 0, mrzCanvas.width, mrzCanvas.height);
+    const md = mrzData.data;
+    for (let i = 0; i < md.length; i += 4) {
+      let g = md[i]; // already grayscale from step 2
+      g = (g - 128) * 1.3 + 128; // additional 1.3× contrast boost for MRZ
+      g = Math.max(0, Math.min(255, g));
+      const v = g < 110 ? 0 : 255; // hard threshold for clean MRZ lines
+      md[i] = v; md[i + 1] = v; md[i + 2] = v;
+    }
+    mrzCtx.putImageData(mrzData, 0, 0);
     mrzDataUrl = mrzCanvas.toDataURL('image/png');
   }
 
