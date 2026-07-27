@@ -59,10 +59,17 @@ export function generateRegistrationNumber(seasonId: number): string {
   const db = getRawDb();
   const existingForSeason = db.prepare(`SELECT * FROM registration WHERE season_id = ?`).all(seasonId) as unknown as Registration[];
 
-  // 6-digit sequence padding requirement: DH-2026-HAJJ-000001
-  const nextSeq = (existingForSeason.length + 1).toString().padStart(6, '0');
-  return `DH-${year}-${code}-${nextSeq}`;
+  let seqNum = existingForSeason.length + 1;
+  let regNum = `DH-${year}-${code}-${seqNum.toString().padStart(6, '0')}`;
+
+  while (db.prepare(`SELECT * FROM registration WHERE registration_number = ?`).get(regNum)) {
+    seqNum++;
+    regNum = `DH-${year}-${code}-${seqNum.toString().padStart(6, '0')}`;
+  }
+
+  return regNum;
 }
+
 
 export function getAllRegistrations(): RegistrationWithDetails[] {
   const db = getRawDb();

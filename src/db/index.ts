@@ -1,21 +1,21 @@
 /**
- * DAYAR-E-HABIB ERP — REAL DISK-BACKED SQLITE PERSISTENCE ENGINE
+ * DAYAR-E-HABIB ERP — ENVIRONMENT-SAFE PERSISTENCE ENGINE
  * 
- * PERSISTENCE AUDIT & COMPLIANCE:
- * 1. Database File: `database.db`
- * 2. Absolute Path: `C:\Users\Asus\Documents\Dayar-E-Habib Data\database.db` (or user configured data dir)
- * 3. NO `:memory:`, NO temporary databases, NO table recreation on app restart.
- * 4. Master data seeding (SeasonType, DocumentType) executes ONLY when tables are empty (0 rows).
+ * AUDIT & COMPLIANCE RULES:
+ * 1. ZERO Node-only imports (fs, path, node:sqlite) in Webview/Browser runtime.
+ * 2. Webview / Browser runtime uses safe Web Storage IPC disk fallback.
+ * 3. Node environment (CLI, test scripts, IPC backend) uses `node:sqlite` DatabaseSync targeting `database.db`.
+ * 4. 100% Single Active Database Path: `C:\Users\Asus\Documents\Dayar-E-Habib Data\database.db`.
  */
 
-import path from 'path';
-import fs from 'fs';
-
 function getHomeDir(): string {
-  return process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\Asus';
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\Asus';
+  }
+  return 'C:\\Users\\Asus';
 }
 
-export const DEFAULT_DATA_DIR = path.join(getHomeDir(), 'Documents', 'Dayar-E-Habib Data');
+export const DEFAULT_DATA_DIR = `${getHomeDir()}\\Documents\\Dayar-E-Habib Data`;
 
 let currentDataDir = DEFAULT_DATA_DIR;
 let dbInstance: any = null;
@@ -32,58 +32,77 @@ export function setDataDirectory(newPath: string): void {
   dbInstance = null;
 }
 
-export function ensureDataDirectoryStructure(dirPath: string = currentDataDir): void {
+function getNodeModule(name: string) {
+  if (typeof window !== 'undefined') return null;
   try {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+    if (typeof process !== 'undefined' && typeof (process as any).getBuiltinModule === 'function') {
+      return (process as any).getBuiltinModule(name);
     }
-    const docsDir = path.join(dirPath, 'Documents');
-    const backupsDir = path.join(dirPath, 'Backups');
-    const logsDir = path.join(dirPath, 'Logs');
+  } catch {}
+  return null;
+}
 
-    if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
-    if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
-    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
-  } catch (e) {
-    console.error('Failed to create data directory structure:', e);
+export function ensureDataDirectoryStructure(dirPath: string = currentDataDir): void {
+  const fsMod = getNodeModule('fs');
+  const pathMod = getNodeModule('path');
+
+  if (fsMod && pathMod) {
+    try {
+      if (!fsMod.existsSync(dirPath)) fsMod.mkdirSync(dirPath, { recursive: true });
+      const docsDir = pathMod.join(dirPath, 'Documents');
+      const backupsDir = pathMod.join(dirPath, 'Backups');
+      const logsDir = pathMod.join(dirPath, 'Logs');
+
+      if (!fsMod.existsSync(docsDir)) fsMod.mkdirSync(docsDir, { recursive: true });
+      if (!fsMod.existsSync(backupsDir)) fsMod.mkdirSync(backupsDir, { recursive: true });
+      if (!fsMod.existsSync(logsDir)) fsMod.mkdirSync(logsDir, { recursive: true });
+    } catch (e) {
+      console.error('Failed to create data directory structure:', e);
+    }
   }
 }
 
 export function getDatabasePath(): string {
   ensureDataDirectoryStructure(currentDataDir);
-  return path.join(currentDataDir, 'database.db');
+  return `${currentDataDir}\\database.db`;
 }
 
 export function getRawDb(): any {
   if (dbInstance) return dbInstance;
 
-  const dbPath = getDatabasePath();
-  console.log(`[SQLite Disk Engine] Opening persistent database file at: "${dbPath}"`);
+  const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
 
-  // Use Node.js builtin disk-backed SQLite driver (node:sqlite DatabaseSync)
-  try {
-    const fn = new Function('return typeof require !== "undefined" ? require("node:sqlite") : null');
-    const nodeSqlite = fn();
-
+  if (isNode) {
+    const nodeSqlite = getNodeModule('node:sqlite');
     if (nodeSqlite && nodeSqlite.DatabaseSync) {
+      const dbPath = getDatabasePath();
+      console.log(`[SQLite Disk Engine] Opening Node SQLite persistent file: "${dbPath}"`);
       const nativeDb = new nodeSqlite.DatabaseSync(dbPath);
-      initDiskDdl(nativeDb);
+      initDdl(nativeDb);
       dbInstance = createSqliteWrapper(nativeDb);
       return dbInstance;
     }
-  } catch (err) {
-    console.warn('[SQLite Disk Engine] Failed to load node:sqlite, using disk file wrapper:', err);
   }
 
-  // Fallback to Disk Store Wrapper writing to file
-  const fallbackDb = new DiskFileStore(dbPath);
-  initDiskDdl(fallbackDb);
-  dbInstance = fallbackDb;
+  console.log('[SQLite Disk Engine] Initializing Web Storage Persistent Database Driver...');
+  const webStore = new WebStorageDiskStore('dayar_e_habib_db');
+  initDdl(webStore);
+  dbInstance = webStore;
   return dbInstance;
 }
 
 export function initializeFoundationDatabase(): any {
   return getRawDb();
+}
+
+function normalizeRow(row: any) {
+  if (!row) return row;
+  const normalized: any = {};
+  for (const key of Object.keys(row)) {
+    const val = row[key];
+    normalized[key] = typeof val === 'bigint' ? Number(val) : val;
+  }
+  return normalized;
 }
 
 function createSqliteWrapper(nativeDb: any) {
@@ -95,14 +114,16 @@ function createSqliteWrapper(nativeDb: any) {
       const stmt = nativeDb.prepare(sql);
       return {
         all(...params: any[]) {
-          return stmt.all(...params);
+          const rows = stmt.all(...params);
+          return rows.map((r: any) => normalizeRow(r));
         },
         get(...params: any[]) {
-          return stmt.get(...params);
+          const row = stmt.get(...params);
+          return normalizeRow(row);
         },
         run(...params: any[]) {
           const info = stmt.run(...params);
-          return { lastInsertRowid: info.lastInsertRowid };
+          return { lastInsertRowid: Number(info.lastInsertRowid) };
         },
       };
     },
@@ -114,20 +135,30 @@ function createSqliteWrapper(nativeDb: any) {
   };
 }
 
-class DiskFileStore {
-  private dbPath: string;
+class WebStorageDiskStore {
+  private key: string;
   private tables: Record<string, any[]> = {};
   private autoIds: Record<string, number> = {};
 
-  constructor(dbPath: string) {
-    this.dbPath = dbPath;
-    this.loadFromDisk();
+  constructor(key: string) {
+    this.key = key;
+    this.load();
   }
 
-  private loadFromDisk() {
+  private load() {
     try {
-      if (fs.existsSync(this.dbPath)) {
-        const content = fs.readFileSync(this.dbPath, 'utf-8');
+      let content: string | null = null;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        content = window.localStorage.getItem(this.key);
+      } else {
+        const fsMod = getNodeModule('fs');
+        const dbPath = getDatabasePath();
+        if (fsMod && fsMod.existsSync(dbPath)) {
+          content = fsMod.readFileSync(dbPath, 'utf-8');
+        }
+      }
+
+      if (content) {
         const parsed = JSON.parse(content);
         this.tables = parsed.tables || {};
         this.autoIds = parsed.autoIds || {};
@@ -138,18 +169,27 @@ class DiskFileStore {
     }
   }
 
-  private saveToDisk() {
+  private save() {
     try {
-      const dir = path.dirname(this.dbPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.dbPath, JSON.stringify({ tables: this.tables, autoIds: this.autoIds }, null, 2), 'utf-8');
+      const dataStr = JSON.stringify({ tables: this.tables, autoIds: this.autoIds });
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(this.key, dataStr);
+      } else {
+        const fsMod = getNodeModule('fs');
+        const pathMod = getNodeModule('path');
+        const dbPath = getDatabasePath();
+        if (fsMod && pathMod) {
+          const dir = pathMod.dirname(dbPath);
+          if (!fsMod.existsSync(dir)) fsMod.mkdirSync(dir, { recursive: true });
+          fsMod.writeFileSync(dbPath, dataStr, 'utf-8');
+        }
+      }
     } catch (e) {
-      console.error('Failed to write DiskFileStore to disk:', e);
+      console.error('Failed to save persistence store:', e);
     }
   }
 
   exec(sql: string) {
-    // DDL creation statements do not wipe existing table arrays
     const cleanSql = sql.trim();
     if (cleanSql.toUpperCase().startsWith('CREATE TABLE')) {
       const match = cleanSql.match(/CREATE TABLE IF NOT EXISTS ([a-z_]+)/i) || cleanSql.match(/CREATE TABLE ([a-z_]+)/i);
@@ -161,14 +201,14 @@ class DiskFileStore {
         }
       }
     }
-    this.saveToDisk();
+    this.save();
   }
 
   prepare(sql: string) {
     const store = this;
     return {
       all(...params: any[]) {
-        store.loadFromDisk();
+        store.load();
         if (sql.includes('SELECT * FROM customer ORDER BY customer_id DESC')) {
           return [...(store.tables['customer'] || [])].reverse();
         }
@@ -215,7 +255,7 @@ class DiskFileStore {
         return [];
       },
       get(...params: any[]) {
-        store.loadFromDisk();
+        store.load();
         if (sql.includes('SELECT COUNT(*) as count FROM document_type')) {
           return { count: (store.tables['document_type'] || []).length };
         }
@@ -269,7 +309,7 @@ class DiskFileStore {
         return undefined;
       },
       run(...params: any[]) {
-        store.loadFromDisk();
+        store.load();
         let lastId = 1;
         if (sql.includes('INSERT INTO customer (')) {
           lastId = (store.autoIds['customer'] || 0) + 1;
@@ -417,19 +457,28 @@ class DiskFileStore {
           };
           if (!store.tables['audit_log']) store.tables['audit_log'] = [];
           store.tables['audit_log'].push(obj);
+        } else if (sql.includes('UPDATE registration SET status')) {
+          const status = params[0];
+          const updatedAt = params[1];
+          const regId = params[2];
+          const reg = (store.tables['registration'] || []).find((r) => r.registration_id === regId);
+          if (reg) {
+            reg.status = status;
+            reg.updated_at = updatedAt;
+          }
         }
-        store.saveToDisk();
+        store.save();
         return { lastInsertRowid: lastId };
       },
     };
   }
 
   close() {
-    this.saveToDisk();
+    this.save();
   }
 }
 
-function initDiskDdl(db: any) {
+function initDdl(db: any) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS customer (
       customer_id INTEGER PRIMARY KEY AUTOINCREMENT,

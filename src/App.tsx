@@ -24,6 +24,8 @@ import {
 import { getAllSeasons, SeasonWithDetails } from './services/seasonPackageService';
 import { createBackup } from './services/backupService';
 
+import { runFullStartupDiagnostic } from './services/startupService';
+
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('customers');
 
@@ -54,8 +56,10 @@ export function App() {
   };
 
   useEffect(() => {
+    runFullStartupDiagnostic();
     reloadData();
   }, []);
+
 
   // Customer Actions
   const handleOpenAddCustomer = () => {
