@@ -1028,7 +1028,7 @@ function initDdl(db: any) {
     }
 
     const existingCust = db.prepare(`SELECT * FROM customer`).all();
-    if (!existingCust || existingCust.length === 0) {
+    if (!existingCust || existingCust.length < 20) {
       const now = new Date().toISOString();
       const demoCusts = [
         ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
@@ -1054,16 +1054,67 @@ function initDdl(db: any) {
       ];
 
       demoCusts.forEach((c, idx) => {
-        const cRes = db.prepare(`
-          INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(c[0], c[1], c[2], c[3], c[4], c[5], c[6], now, now);
+        const cId = idx + 1;
+        const exists = db.prepare(`SELECT customer_id FROM customer WHERE customer_id = ?`).get(cId);
+        if (!exists) {
+          db.prepare(`
+            INSERT INTO customer (customer_id, full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(cId, c[0], c[1], c[2], c[3], c[4], c[5], c[6], now, now);
 
-        db.prepare(`
-          INSERT INTO customer_identity (customer_id, passport_number, issue_date, expiry_date, place_of_issue, identity_status, created_at)
-          VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
-        `).run(cRes.lastInsertRowid, c[7], c[8], c[9], c[10], now);
+          db.prepare(`
+            INSERT INTO customer_identity (identity_id, customer_id, passport_number, issue_date, expiry_date, place_of_issue, identity_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+          `).run(cId, cId, c[7], c[8], c[9], c[10], now);
+        }
       });
+    }
+
+    const existingReg = db.prepare(`SELECT * FROM registration`).all();
+    if (!existingReg || existingReg.length < 3) {
+      const now = new Date().toISOString();
+      const r1Exists = db.prepare(`SELECT registration_id FROM registration WHERE registration_id = 1`).get();
+      if (!r1Exists) {
+        db.prepare(`
+          INSERT INTO registration (registration_id, registration_number, customer_id, season_id, package_id, status, payment_status, package_name_snapshot, package_price_snapshot, season_label_snapshot, season_type_code_snapshot, representative, tour_name, booking_date, airline, sector, flight_number, pnr, saudi_agent, departure_date, arrival_date, room_preference, remarks, created_at, updated_at)
+          VALUES (1, 'DH-2026-HAJ-000001', 1, 1, 1, 'Visa Approved', 'Advance Received', 'Hajj Deluxe Package', 45000000, 'Hajj 2026', 'HAJJ', 'Fayyaz Khan', 'VIP Hajj Group A', '2026-01-15', 'Saudia Airlines', 'BOM - JED - BOM', 'SV-741', 'PNR-998811', 'Al-Bait Guest Services', '2026-06-01', '2026-06-20', 'Double Sharing', 'VIP Hajj Pilgrim - Single Pax', ?, ?)
+        `).run(now, now);
+
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (1, 1, 1, 1, 1, 'Primary', 'ACTIVE', ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_charge (charge_id, registration_id, charge_type, rate_inr_paise, quantity, amount_paise, created_at, updated_at) VALUES (1, 1, 'Adult', 45000000, 1, 45000000, ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO payment (payment_id, registration_id, amount_paise, payment_type, payment_date, created_at) VALUES (1, 1, 10000000, 'Cash', '2026-01-15', ?)`).run(now);
+      }
+
+      const r2Exists = db.prepare(`SELECT registration_id FROM registration WHERE registration_id = 2`).get();
+      if (!r2Exists) {
+        db.prepare(`
+          INSERT INTO registration (registration_id, registration_number, customer_id, season_id, package_id, status, payment_status, package_name_snapshot, package_price_snapshot, season_label_snapshot, season_type_code_snapshot, representative, tour_name, booking_date, airline, sector, flight_number, pnr, saudi_agent, departure_date, arrival_date, room_preference, remarks, created_at, updated_at)
+          VALUES (2, 'DH-2026-UMR-000002', 2, 2, 3, 'Travel Ready', 'Fully Paid', 'Umrah Executive Deluxe', 15000000, 'Umrah 2026 Executive', 'UMR', 'Suleman Mahida', 'Executive Umrah Group 4', '2026-02-10', 'Saudia Airlines', 'BOM - JED - BOM', 'SV-743', 'PNR-FAM444', 'Makkah Clock Tower Host', '2026-03-10', '2026-03-24', '4 Sharing Quad Room', 'Family of 4 Booking', ?, ?)
+        `).run(now, now);
+
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (2, 2, 2, 1, 1, 'Primary', 'ACTIVE', ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (3, 2, 3, 0, 2, 'Spouse', 'ACTIVE', ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (4, 2, 4, 0, 3, 'Child', 'ACTIVE', ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (5, 2, 5, 0, 4, 'Child', 'ACTIVE', ?, ?)`).run(now, now);
+
+        db.prepare(`INSERT INTO registration_charge (charge_id, registration_id, charge_type, rate_inr_paise, quantity, amount_paise, created_at, updated_at) VALUES (2, 2, 'Adult', 15000000, 2, 30000000, ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_charge (charge_id, registration_id, charge_type, rate_inr_paise, quantity, amount_paise, created_at, updated_at) VALUES (3, 2, 'ChildWithBed', 9000000, 2, 18000000, ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO payment (payment_id, registration_id, amount_paise, payment_type, reference_number, payment_date, created_at) VALUES (2, 2, 48000000, 'Bank Transfer', 'NEFT-88991122', '2026-02-12', ?)`).run(now);
+      }
+
+      const r3Exists = db.prepare(`SELECT registration_id FROM registration WHERE registration_id = 3`).get();
+      if (!r3Exists) {
+        db.prepare(`
+          INSERT INTO registration (registration_id, registration_number, customer_id, season_id, package_id, status, payment_status, package_name_snapshot, package_price_snapshot, season_label_snapshot, season_type_code_snapshot, representative, booking_date, created_at, updated_at)
+          VALUES (3, 'DH-2026-UMR-000003', 6, 2, 4, 'Documents Pending', 'Partially Paid', 'Umrah Economy Saver', 8500000, 'Umrah 2026 Executive', 'UMR', 'Fayyaz Khan', '2026-02-20', ?, ?)
+        `).run(now, now);
+
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (6, 3, 6, 1, 1, 'Primary', 'ACTIVE', ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO registration_pax (pax_id, registration_id, customer_id, is_primary, pax_sequence, relationship, pax_status, created_at, updated_at) VALUES (7, 3, 7, 0, 2, 'Brother', 'ACTIVE', ?, ?)`).run(now, now);
+
+        db.prepare(`INSERT INTO registration_charge (charge_id, registration_id, charge_type, rate_inr_paise, quantity, amount_paise, created_at, updated_at) VALUES (4, 3, 'Adult', 8500000, 2, 17000000, ?, ?)`).run(now, now);
+        db.prepare(`INSERT INTO payment (payment_id, registration_id, amount_paise, payment_type, cheque_number, bank_name, payment_date, created_at) VALUES (3, 3, 5000000, 'Cheque', 'CHQ-445566', 'HDFC Bank', '2026-02-20', ?)`).run(now);
+      }
     }
   } catch (e) {
     console.error('Failed to seed default database records:', e);
