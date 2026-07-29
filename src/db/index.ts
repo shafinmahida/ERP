@@ -156,7 +156,13 @@ class WebStorageDiskStore {
         const parsed = JSON.parse(content);
         this.tables = parsed.tables || {};
         this.autoIds = parsed.autoIds || {};
-        if (!this.tables['customer_identity'] || this.tables['customer_identity'].length === 0) {
+        if (
+          !this.tables['customer_identity'] ||
+          !this.tables['registration'] ||
+          this.tables['registration'].length < 3 ||
+          !this.tables['customer'] ||
+          this.tables['customer'].length < 20
+        ) {
           this.tables = {};
           this.autoIds = {};
         }
@@ -222,38 +228,40 @@ class WebStorageDiskStore {
       ['Zubair Hassan Patel', 'Hassan Patel', '1991-01-01', 'Male', 'Indian', '+919777788888', 'Gujarat', 'G7788990', '2024-03-15', '2034-03-14', 'Surat'],
     ];
 
-    this.tables['customer'] = [];
-    this.tables['customer_identity'] = [];
+    if (!this.tables['customer'] || this.tables['customer'].length < 20) {
+      this.tables['customer'] = [];
+      this.tables['customer_identity'] = [];
 
-    demoCusts.forEach((c, idx) => {
-      const cId = idx + 1;
-      this.tables['customer'].push({
-        customer_id: cId,
-        full_name: c[0],
-        father_name: c[1],
-        date_of_birth: c[2],
-        gender: c[3],
-        nationality: c[4],
-        mobile_number: c[5],
-        state: c[6],
-        created_at: now,
-        updated_at: now,
+      demoCusts.forEach((c, idx) => {
+        const cId = idx + 1;
+        this.tables['customer'].push({
+          customer_id: cId,
+          full_name: c[0],
+          father_name: c[1],
+          date_of_birth: c[2],
+          gender: c[3],
+          nationality: c[4],
+          mobile_number: c[5],
+          state: c[6],
+          created_at: now,
+          updated_at: now,
+        });
+
+        this.tables['customer_identity'].push({
+          identity_id: idx + 1,
+          customer_id: cId,
+          passport_number: c[7],
+          issue_date: c[8],
+          expiry_date: c[9],
+          place_of_issue: c[10],
+          identity_status: 'ACTIVE',
+          created_at: now,
+        });
       });
 
-      this.tables['customer_identity'].push({
-        identity_id: idx + 1,
-        customer_id: cId,
-        passport_number: c[7],
-        issue_date: c[8],
-        expiry_date: c[9],
-        place_of_issue: c[10],
-        identity_status: 'ACTIVE',
-        created_at: now,
-      });
-    });
-
-    this.autoIds['customer'] = demoCusts.length;
-    this.autoIds['customer_identity'] = demoCusts.length;
+      this.autoIds['customer'] = demoCusts.length;
+      this.autoIds['customer_identity'] = demoCusts.length;
+    }
 
     if (!this.tables['registration'] || this.tables['registration'].length === 0) {
       this.tables['registration'] = [
@@ -407,48 +415,61 @@ class WebStorageDiskStore {
           }
           return [...(store.tables['customer'] || [])];
         }
-        if (sql.includes('SELECT * FROM customer_identity WHERE customer_id = ?')) {
+        if (sql.includes('FROM customer_identity WHERE customer_id = ?')) {
           const id = params[0];
-          return (store.tables['customer_identity'] || []).filter((i) => i.customer_id === id);
+          return (store.tables['customer_identity'] || []).filter((i) => Number(i.customer_id) === Number(id));
         }
-        if (sql.includes('SELECT * FROM customer_identity')) {
+        if (sql.includes('FROM customer_identity')) {
           return [...(store.tables['customer_identity'] || [])];
         }
-        if (sql.includes('SELECT * FROM season_type')) {
+        if (sql.includes('FROM customer')) {
+          if (sql.includes('DESC')) {
+            return [...(store.tables['customer'] || [])].reverse();
+          }
+          return [...(store.tables['customer'] || [])];
+        }
+        if (sql.includes('FROM season_type')) {
           return [...(store.tables['season_type'] || [])];
         }
-        if (sql.includes('SELECT * FROM season')) {
+        if (sql.includes('FROM season')) {
           return [...(store.tables['season'] || [])];
         }
-        if (sql.includes('SELECT * FROM package WHERE season_id = ?')) {
+        if (sql.includes('FROM package WHERE season_id = ?')) {
           const sId = params[0];
-          return (store.tables['package'] || []).filter((p) => p.season_id === sId);
+          return (store.tables['package'] || []).filter((p) => Number(p.season_id) === Number(sId));
         }
-        if (sql.includes('SELECT * FROM package')) {
+        if (sql.includes('FROM package')) {
           return [...(store.tables['package'] || [])];
         }
-        if (sql.includes('SELECT * FROM registration ORDER BY registration_id DESC') || sql.includes('SELECT * FROM registration')) {
+        if (sql.includes('FROM registration_pax WHERE registration_id = ?')) {
+          const regId = params[0];
+          return (store.tables['registration_pax'] || []).filter((p) => Number(p.registration_id) === Number(regId));
+        }
+        if (sql.includes('FROM registration_pax')) {
+          return [...(store.tables['registration_pax'] || [])];
+        }
+        if (sql.includes('FROM registration')) {
           return [...(store.tables['registration'] || [])].reverse();
         }
-        if (sql.includes('SELECT * FROM registration_charge WHERE registration_id = ?')) {
+        if (sql.includes('FROM registration_charge WHERE registration_id = ?')) {
           const regId = params[0];
-          return (store.tables['registration_charge'] || []).filter((c) => c.registration_id === regId);
+          return (store.tables['registration_charge'] || []).filter((c) => Number(c.registration_id) === Number(regId));
         }
-        if (sql.includes('SELECT * FROM registration_tax WHERE registration_id = ?')) {
+        if (sql.includes('FROM registration_tax WHERE registration_id = ?')) {
           const regId = params[0];
-          return (store.tables['registration_tax'] || []).filter((t) => t.registration_id === regId);
+          return (store.tables['registration_tax'] || []).filter((t) => Number(t.registration_id) === Number(regId));
         }
-        if (sql.includes('SELECT * FROM payment WHERE registration_id = ?')) {
+        if (sql.includes('FROM payment WHERE registration_id = ?')) {
           const regId = params[0];
-          return (store.tables['payment'] || []).filter((p) => p.registration_id === regId);
+          return (store.tables['payment'] || []).filter((p) => Number(p.registration_id) === Number(regId));
         }
-        if (sql.includes('SELECT * FROM company_settings')) {
+        if (sql.includes('FROM company_settings')) {
           return [...(store.tables['company_settings'] || [])];
         }
-        if (sql.includes('SELECT * FROM document_type')) {
+        if (sql.includes('FROM document_type')) {
           return [...(store.tables['document_type'] || [])];
         }
-        if (sql.includes('SELECT * FROM audit_log')) {
+        if (sql.includes('FROM audit_log')) {
           return [...(store.tables['audit_log'] || [])].reverse();
         }
         return [];
