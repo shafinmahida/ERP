@@ -31,8 +31,7 @@ export function CustomerList({
 
   const filteredData = useMemo(() => {
     if (!globalFilter.trim() && genderFilter === 'all') {
-      // The Empty Desk Rule: Show max 5 recent records when no search filter is entered
-      return customers.slice(0, 5);
+      return customers;
     }
 
     return customers.filter((c) => {

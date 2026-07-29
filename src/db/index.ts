@@ -255,19 +255,108 @@ class WebStorageDiskStore {
     this.autoIds['customer'] = demoCusts.length;
     this.autoIds['customer_identity'] = demoCusts.length;
 
-    if (!this.tables['customer_identity'] || this.tables['customer_identity'].length === 0) {
-      const demoPassports = ['Q123456', 'Z9876541', 'Z9876542', 'Z9876543', 'Z9876544', 'P1900001', 'P1900002', 'P1500001', 'K8877112', 'K8877113', 'T5544332', 'T5544333', 'U1122334', 'U1122335', 'M3344556', 'M3344557', 'M3344558', 'W5566778', 'W5566779', 'G7788990'];
-      this.tables['customer_identity'] = (this.tables['customer'] || []).map((c, idx) => ({
-        identity_id: idx + 1,
-        customer_id: Number(c.customer_id),
-        passport_number: demoPassports[idx % demoPassports.length],
-        issue_date: '2024-01-10',
-        expiry_date: '2034-01-09',
-        place_of_issue: 'Mumbai',
-        identity_status: 'ACTIVE',
-        created_at: now,
-      }));
-      this.autoIds['customer_identity'] = this.tables['customer_identity'].length;
+    if (!this.tables['registration'] || this.tables['registration'].length === 0) {
+      this.tables['registration'] = [
+        {
+          registration_id: 1,
+          registration_number: 'DH-2026-HAJ-000001',
+          customer_id: 1,
+          season_id: 1,
+          package_id: 1,
+          status: 'Visa Approved',
+          payment_status: 'Advance Received',
+          package_name_snapshot: 'Hajj Deluxe Package',
+          package_price_snapshot: 45000000,
+          season_label_snapshot: 'Hajj 2026',
+          season_type_code_snapshot: 'HAJJ',
+          representative: 'Fayyaz Khan',
+          tour_name: 'VIP Hajj Group A',
+          booking_date: '2026-01-15',
+          airline: 'Saudia Airlines',
+          sector: 'BOM - JED - BOM',
+          flight_number: 'SV-741',
+          pnr: 'PNR-998811',
+          saudi_agent: 'Al-Bait Guest Services',
+          departure_date: '2026-06-01',
+          arrival_date: '2026-06-20',
+          room_preference: 'Double Sharing',
+          remarks: 'VIP Hajj Pilgrim - Single Pax',
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          registration_id: 2,
+          registration_number: 'DH-2026-UMR-000002',
+          customer_id: 2,
+          season_id: 2,
+          package_id: 3,
+          status: 'Travel Ready',
+          payment_status: 'Fully Paid',
+          package_name_snapshot: 'Umrah Executive Deluxe',
+          package_price_snapshot: 15000000,
+          season_label_snapshot: 'Umrah 2026 Executive',
+          season_type_code_snapshot: 'UMR',
+          representative: 'Suleman Mahida',
+          tour_name: 'Executive Umrah Group 4',
+          booking_date: '2026-02-10',
+          airline: 'Saudia Airlines',
+          sector: 'BOM - JED - BOM',
+          flight_number: 'SV-743',
+          pnr: 'PNR-FAM444',
+          saudi_agent: 'Makkah Clock Tower Host',
+          departure_date: '2026-03-10',
+          arrival_date: '2026-03-24',
+          room_preference: '4 Sharing Quad Room',
+          remarks: 'Family of 4 Booking',
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          registration_id: 3,
+          registration_number: 'DH-2026-UMR-000003',
+          customer_id: 6,
+          season_id: 2,
+          package_id: 4,
+          status: 'Documents Pending',
+          payment_status: 'Partially Paid',
+          package_name_snapshot: 'Umrah Economy Saver',
+          package_price_snapshot: 8500000,
+          season_label_snapshot: 'Umrah 2026 Executive',
+          season_type_code_snapshot: 'UMR',
+          representative: 'Fayyaz Khan',
+          booking_date: '2026-02-20',
+          created_at: now,
+          updated_at: now,
+        },
+      ];
+
+      this.tables['registration_pax'] = [
+        { pax_id: 1, registration_id: 1, customer_id: 1, is_primary: 1, pax_sequence: 1, relationship: 'Primary', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 2, registration_id: 2, customer_id: 2, is_primary: 1, pax_sequence: 1, relationship: 'Primary', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 3, registration_id: 2, customer_id: 3, is_primary: 0, pax_sequence: 2, relationship: 'Spouse', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 4, registration_id: 2, customer_id: 4, is_primary: 0, pax_sequence: 3, relationship: 'Child', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 5, registration_id: 2, customer_id: 5, is_primary: 0, pax_sequence: 4, relationship: 'Child', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 6, registration_id: 3, customer_id: 6, is_primary: 1, pax_sequence: 1, relationship: 'Primary', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+        { pax_id: 7, registration_id: 3, customer_id: 7, is_primary: 0, pax_sequence: 2, relationship: 'Brother', pax_status: 'ACTIVE', created_at: now, updated_at: now },
+      ];
+
+      this.tables['registration_charge'] = [
+        { charge_id: 1, registration_id: 1, charge_type: 'Adult', rate_inr_paise: 45000000, quantity: 1, amount_paise: 45000000, created_at: now, updated_at: now },
+        { charge_id: 2, registration_id: 2, charge_type: 'Adult', rate_inr_paise: 15000000, quantity: 2, amount_paise: 30000000, created_at: now, updated_at: now },
+        { charge_id: 3, registration_id: 2, charge_type: 'ChildWithBed', rate_inr_paise: 9000000, quantity: 2, amount_paise: 18000000, created_at: now, updated_at: now },
+        { charge_id: 4, registration_id: 3, charge_type: 'Adult', rate_inr_paise: 8500000, quantity: 2, amount_paise: 17000000, created_at: now, updated_at: now },
+      ];
+
+      this.tables['payment'] = [
+        { payment_id: 1, registration_id: 1, amount_paise: 10000000, payment_type: 'Cash', payment_date: '2026-01-15', created_at: now },
+        { payment_id: 2, registration_id: 2, amount_paise: 48000000, payment_type: 'Bank Transfer', reference_number: 'NEFT-88991122', payment_date: '2026-02-12', created_at: now },
+        { payment_id: 3, registration_id: 3, amount_paise: 5000000, payment_type: 'Cheque', cheque_number: 'CHQ-445566', bank_name: 'HDFC Bank', payment_date: '2026-02-20', created_at: now },
+      ];
+
+      this.autoIds['registration'] = 3;
+      this.autoIds['registration_pax'] = 7;
+      this.autoIds['registration_charge'] = 4;
+      this.autoIds['payment'] = 3;
     }
     this.save();
   }
