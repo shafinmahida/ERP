@@ -783,6 +783,15 @@ function initDdl(db: any) {
       nationality TEXT NOT NULL DEFAULT 'Indian',
       mobile_number TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'Maharashtra',
+      address_line1 TEXT,
+      address_line2 TEXT,
+      area_locality TEXT,
+      city TEXT,
+      district TEXT,
+      pin_code TEXT,
+      country TEXT DEFAULT 'India',
+      email TEXT,
+      phone_landline TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -810,14 +819,18 @@ function initDdl(db: any) {
       season_id INTEGER PRIMARY KEY AUTOINCREMENT,
       season_type_id INTEGER NOT NULL,
       year INTEGER NOT NULL,
-      label TEXT NOT NULL
+      label TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS package (
       package_id INTEGER PRIMARY KEY AUTOINCREMENT,
       season_id INTEGER NOT NULL,
       name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT ''
+      description TEXT NOT NULL DEFAULT '',
+      base_price_paise INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS registration (
@@ -828,6 +841,33 @@ function initDdl(db: any) {
       package_id INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'Draft',
       payment_status TEXT NOT NULL DEFAULT 'Pending',
+      package_name_snapshot TEXT,
+      package_price_snapshot INTEGER,
+      season_label_snapshot TEXT,
+      season_type_code_snapshot TEXT,
+      representative TEXT,
+      tour_name TEXT,
+      booking_date TEXT,
+      airline TEXT,
+      sector TEXT,
+      flight_number TEXT,
+      pnr TEXT,
+      saudi_agent TEXT,
+      departure_date TEXT,
+      arrival_date TEXT,
+      room_preference TEXT,
+      bus_number TEXT,
+      remarks TEXT,
+      makkah_hotel TEXT,
+      madinah_hotel TEXT,
+      makkah_checkin TEXT,
+      makkah_checkout TEXT,
+      madinah_checkin TEXT,
+      madinah_checkout TEXT,
+      meal_plan TEXT,
+      room_type TEXT,
+      room_number TEXT,
+      accommodation_notes TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
