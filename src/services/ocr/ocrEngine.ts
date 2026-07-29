@@ -1,126 +1,142 @@
-/**
- * DAYAR-E-HABIB ERP — PRODUCTION-GRADE OCR ENGINE (ZERO MOCK DATA)
- * 
- * ARCHITECTURAL INTEGRITY RULES:
- * 1. ZERO mock, hardcoded, dummy, fallback, or sample identity data.
- * 2. Every extracted character MUST originate directly from the actual image.
- * 3. Uses a singleton Tesseract.js worker (initialized once, reused for all scans)
- *    to avoid re-downloading language packs on every rotation attempt.
- * 4. Falls back to Tauri Rust IPC backend if running in desktop shell.
- */
+import { createWorker } from 'tesseract.js';
+import { rotateCanvas, enhanceCanvasForOcr } from './imagePreprocessor';
+import { parseTd3MrzLines, ParsedMrzData } from './mrzParser';
 
-import { createWorker, Worker } from 'tesseract.js';
+export type ExtractionMode =
+  | 'MRZ_VERIFIED' // Green Badge: Checksums passed 100%, MRZ authoritative
+  | 'MRZ_UNVERIFIED' // Amber Badge: Checksum mismatch, needs operator review
+  | 'GENERAL_OCR_FALLBACK' // Slate Badge: No MRZ found, raw text extracted
+  | 'MANUAL_ENTRY'; // Slate Badge: No text extracted or non-passport doc
 
-export interface OcrEngineOutput {
+export interface ExtractedField {
+  value: string;
+  confidence: 'HIGH' | 'LOW';
+  isAuthoritative: boolean;
+}
+
+export interface DocumentOcrResult {
+  extractionMode: ExtractionMode;
+  confidenceBadge: {
+    label: string;
+    variant: 'success' | 'warning' | 'info' | 'secondary';
+    description: string;
+  };
+  fields: {
+    full_name: ExtractedField;
+    father_name: ExtractedField;
+    passport_number: ExtractedField;
+    date_of_birth: ExtractedField;
+    gender: ExtractedField;
+    nationality: ExtractedField;
+    issue_date: ExtractedField;
+    expiry_date: ExtractedField;
+    place_of_issue: ExtractedField;
+  };
+  mrzData: ParsedMrzData | null;
   rawText: string;
-  lines: string[];
-  engineName: string;
-  engineVersion: string;
-  processedAt: string;
-  averageConfidence: number;
+  orientationUsed: number;
 }
 
-// ─── Singleton Tesseract Worker ───────────────────────────────────────────────
-// The worker is created once and reused for all scan operations.
-// This prevents re-downloading 10MB language packs on every rotation attempt.
-let _workerInstance: Worker | null = null;
-let _workerInitializing: Promise<Worker> | null = null;
+/**
+ * Creates an offline Tesseract Worker configured for clean alphanumeric OCR.
+ */
+let tesseractWorkerPromise: Promise<any> | null = null;
 
-async function getTesseractWorker(): Promise<Worker> {
-  if (_workerInstance) return _workerInstance;
-
-  // If already being initialized (e.g. concurrent calls), await the in-flight promise
-  if (_workerInitializing) return _workerInitializing;
-
-  _workerInitializing = createWorker('eng', 1, {
-    // Use local cache dir to avoid re-downloading
-    cacheMethod: 'write',
-    gzip: true,
-  }).then((w) => {
-    _workerInstance = w;
-    _workerInitializing = null;
-    return w;
-  });
-
-  return _workerInitializing;
+async function getTesseractWorker() {
+  if (!tesseractWorkerPromise) {
+    tesseractWorkerPromise = (async () => {
+      const worker = await createWorker('eng');
+      return worker;
+    })();
+  }
+  return await tesseractWorkerPromise;
 }
 
-// Call this when the app unmounts (optional clean-up)
-export async function terminateTesseractWorker() {
-  if (_workerInstance) {
-    await _workerInstance.terminate();
-    _workerInstance = null;
+/**
+ * Runs Tesseract OCR on a canvas and extracts text.
+ */
+export async function recognizeCanvasText(canvas: HTMLCanvasElement): Promise<string> {
+  try {
+    const worker = await getTesseractWorker();
+    const ret = await worker.recognize(canvas);
+    return ret.data.text || '';
+  } catch (err) {
+    console.warn('Tesseract OCR error:', err);
+    return '';
   }
 }
 
-// ─── Main OCR Entry Point ─────────────────────────────────────────────────────
+/**
+ * Finds MRZ 2 lines (44 characters each starting with P< or P) in text snippet.
+ */
+export function findMrzLinesInText(text: string): { line1: string; line2: string } | null {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim().replace(/\s+/g, ''))
+    .filter((l) => l.length >= 28);
 
-export async function runOfflineOcr(imageDataUrl: string): Promise<OcrEngineOutput> {
-  const processedAt = new Date().toISOString();
-
-  if (!imageDataUrl || imageDataUrl.trim() === '') {
-    return {
-      rawText: '',
-      lines: [],
-      engineName: 'Tesseract.js / Rust Native Engine',
-      engineVersion: '7.0.0',
-      processedAt,
-      averageConfidence: 0,
-    };
-  }
-
-  // Stage 1: Try Tauri 2 Rust Backend IPC Command if running in desktop shell
-  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-    try {
-      const { invoke } = (window as any).__TAURI_INTERNALS__;
-      const res: any = await invoke('perform_backend_ocr', { imageDataBase64: imageDataUrl });
-      if (res && res.lines && res.lines.length > 0) {
-        return {
-          rawText: res.raw_text,
-          lines: res.lines,
-          engineName: res.engine_name,
-          engineVersion: res.engine_version,
-          processedAt: res.processed_at,
-          averageConfidence: res.average_confidence,
-        };
+  for (let i = 0; i < lines.length; i++) {
+    const l1 = lines[i];
+    if (l1.startsWith('P<') || l1.startsWith('P') || l1.includes('<<')) {
+      // Look for line 2 immediately following or 1-2 lines after
+      for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
+        const l2 = lines[j];
+        if (l2.length >= 28 && /[0-9A-Z<]{28,}/.test(l2)) {
+          return { line1: l1, line2: l2 };
+        }
       }
-    } catch (e) {
-      console.warn('[OCR] Tauri Rust backend returned empty/failed — falling back to Tesseract.js:', e);
     }
   }
 
-  // Stage 2: Singleton Tesseract.js Engine (reuse worker across all rotation attempts)
-  try {
-    const worker = await getTesseractWorker();
-    const ret = await worker.recognize(imageDataUrl);
+  return null;
+}
 
-    const rawText = ret.data.text || '';
-    const lines = rawText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+/**
+ * Extracts visual zone non-MRZ fields (Father's Name, Issue Date, Place of Issue) from general text.
+ */
+export function extractVisualZoneFields(text: string) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
-    const averageConfidence = ret.data.confidence || 0;
+  let fatherName = '';
+  let placeOfIssue = '';
+  let issueDate = '';
 
-    return {
-      rawText,
-      lines,
-      engineName: 'Tesseract.js OCR Engine',
-      engineVersion: '7.0.0',
-      processedAt,
-      averageConfidence: Math.round(averageConfidence),
-    };
-  } catch (err) {
-    console.error('[OCR] Tesseract.js engine error:', err);
-    // Reset worker on error so next call gets a fresh one
-    _workerInstance = null;
-    return {
-      rawText: '',
-      lines: [],
-      engineName: 'Tesseract.js OCR Engine (Error)',
-      engineVersion: '7.0.0',
-      processedAt,
-      averageConfidence: 0,
-    };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Father's Name anchor
+    if (/father|husband|mother|guardian/i.test(line)) {
+      if (line.includes(':') || line.includes('-')) {
+        const parts = line.split(/[:\-]+/);
+        if (parts.length >= 2) fatherName = parts[1].trim();
+      } else if (i + 1 < lines.length) {
+        fatherName = lines[i + 1].trim();
+      }
+    }
+
+    // Place of issue anchor
+    if (/place of issue|issuing authority|issue place/i.test(line)) {
+      if (line.includes(':') || line.includes('-')) {
+        const parts = line.split(/[:\-]+/);
+        if (parts.length >= 2) placeOfIssue = parts[1].trim();
+      } else if (i + 1 < lines.length) {
+        placeOfIssue = lines[i + 1].trim();
+      }
+    } else if (/\b(MUMBAI|DELHI|ISLAMABAD|LAHORE|KARACHI|PESHAWAR|QUETTA|HYDERABAD|BANGALORE|CHENNAI|KOLKATA|LUCKNOW|AHMEDABAD)\b/i.test(line)) {
+      if (!placeOfIssue) {
+        const match = line.match(/\b(MUMBAI|DELHI|ISLAMABAD|LAHORE|KARACHI|PESHAWAR|QUETTA|HYDERABAD|BANGALORE|CHENNAI|KOLKATA|LUCKNOW|AHMEDABAD)\b/i);
+        if (match) placeOfIssue = match[0].toUpperCase();
+      }
+    }
+
+    // Issue Date regex (DD/MM/YYYY)
+    if (/issue|date of issue|issued/i.test(line) || (!issueDate && /\b\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}\b/.test(line))) {
+      const dateMatch = line.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
+      if (dateMatch) {
+        issueDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+      }
+    }
   }
+
+  return { fatherName, placeOfIssue, issueDate };
 }

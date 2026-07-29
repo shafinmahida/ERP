@@ -45,11 +45,11 @@ function levenshtein(a: string, b: string): number {
 
 export function getAllCustomers(): CustomerWithIdentity[] {
   const db = getRawDb();
-  const customers = db.prepare(`SELECT * FROM customer ORDER BY customer_id DESC`).all() as unknown as Customer[];
+  const customers = db.prepare(`SELECT * FROM customer ORDER BY customer_id ASC`).all() as unknown as Customer[];
   const identities = db.prepare(`SELECT * FROM customer_identity`).all() as unknown as CustomerIdentity[];
 
   return customers.map((c) => {
-    const custIdentities = identities.filter((id) => id.customer_id === c.customer_id);
+    const custIdentities = identities.filter((id) => Number(id.customer_id) === Number(c.customer_id));
     const activeId = custIdentities.find((id) => id.identity_status === 'ACTIVE') || custIdentities[0];
     return {
       ...c,
@@ -57,6 +57,19 @@ export function getAllCustomers(): CustomerWithIdentity[] {
       currentPassport: activeId?.passport_number || '',
     };
   });
+}
+
+export function searchCustomers(query: string): CustomerWithIdentity[] {
+  const all = getAllCustomers();
+  if (!query || !query.trim()) return all;
+  const q = query.toLowerCase().trim();
+  return all.filter(
+    (c) =>
+      c.full_name.toLowerCase().includes(q) ||
+      c.father_name.toLowerCase().includes(q) ||
+      (c.mobile_number || '').includes(q) ||
+      (c.currentPassport || '').toLowerCase().includes(q)
+  );
 }
 
 export function getCustomerById(id: number): CustomerWithIdentity | null {
@@ -160,6 +173,7 @@ export function createCustomer(data: {
   gender: string;
   nationality: string;
   mobile_number: string;
+  state?: string;
   passport_number?: string;
   issue_date?: string;
   expiry_date?: string;
@@ -168,9 +182,11 @@ export function createCustomer(data: {
   const db = getRawDb();
   const now = new Date().toISOString();
 
+  const custState = data.state?.trim() || 'Maharashtra';
+
   const insertCustStmt = db.prepare(`
-    INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const res = insertCustStmt.run(
@@ -178,8 +194,9 @@ export function createCustomer(data: {
     data.father_name.trim(),
     data.date_of_birth.trim(),
     data.gender,
-    data.nationality.trim() || 'Pakistani',
+    data.nationality.trim() || 'Indian',
     data.mobile_number.trim(),
+    custState,
     now,
     now
   );
@@ -233,6 +250,7 @@ export function updateCustomer(
     gender?: string;
     nationality?: string;
     mobile_number?: string;
+    state?: string;
     passport_number?: string;
     issue_date?: string;
     expiry_date?: string;
@@ -253,6 +271,7 @@ export function updateCustomer(
         gender = COALESCE(?, gender),
         nationality = COALESCE(?, nationality),
         mobile_number = COALESCE(?, mobile_number),
+        state = COALESCE(?, state),
         updated_at = ?
     WHERE customer_id = ?
   `);
@@ -264,6 +283,7 @@ export function updateCustomer(
     data.gender || null,
     data.nationality ? data.nationality.trim() : null,
     data.mobile_number ? data.mobile_number.trim() : null,
+    data.state ? data.state.trim() : null,
     now,
     id
   );

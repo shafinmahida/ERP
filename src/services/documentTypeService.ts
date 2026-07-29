@@ -1,8 +1,8 @@
 import { getRawDb } from '../db';
-import { DocumentTypeEntity } from '../db/schema';
+import { DocumentType } from '../db/schema';
 import { recordAudit } from './auditService';
 
-export type { DocumentTypeEntity };
+export type { DocumentType };
 export type OwnerScope = 'IDENTITY' | 'REGISTRATION';
 
 
@@ -38,32 +38,37 @@ export function ensureDefaultDocumentTypesSeeded(): void {
   }
 }
 
-export function getAllDocumentTypes(): DocumentTypeEntity[] {
+export function getAllDocumentTypes(): DocumentType[] {
+  const db = getRawDb();
   ensureDefaultDocumentTypesSeeded();
-  const db = getRawDb();
-  return db
-    .prepare(`SELECT * FROM document_type ORDER BY sort_order ASC, document_type_id ASC`)
-    .all() as unknown as DocumentTypeEntity[];
+  return db.prepare(`SELECT * FROM document_type ORDER BY sort_order ASC, name ASC`).all() as unknown as DocumentType[];
 }
 
-export function getActiveDocumentTypesByScope(scope: OwnerScope): DocumentTypeEntity[] {
-  const all = getAllDocumentTypes();
-  return all.filter((dt) => dt.is_active === 1 && dt.owner_scope === scope);
+export function getActiveDocumentTypes(): DocumentType[] {
+  const db = getRawDb();
+  ensureDefaultDocumentTypesSeeded();
+  return db.prepare(`SELECT * FROM document_type WHERE is_active = 1 ORDER BY sort_order ASC, name ASC`).all() as unknown as DocumentType[];
 }
 
-export function getDocumentTypeById(id: number): DocumentTypeEntity | null {
+export function getActiveDocumentTypesByScope(scope: OwnerScope): DocumentType[] {
+  const all = getActiveDocumentTypes();
+  return all.filter((dt) => dt.owner_scope === scope);
+}
+
+export function getDocumentTypeById(id: number): DocumentType | null {
   const db = getRawDb();
-  const res = db.prepare(`SELECT * FROM document_type WHERE document_type_id = ?`).get(id) as unknown as DocumentTypeEntity | undefined;
+  const res = db.prepare(`SELECT * FROM document_type WHERE document_type_id = ?`).get(id) as unknown as DocumentType | undefined;
   return res || null;
 }
 
-export function getDocumentTypeByCode(code: string): DocumentTypeEntity | null {
+export function getDocumentTypeByCode(code: string): DocumentType | null {
   const db = getRawDb();
-  const res = db.prepare(`SELECT * FROM document_type WHERE code = ?`).get(code.trim().toUpperCase()) as unknown as DocumentTypeEntity | undefined;
+  const cleanCode = code.trim().toUpperCase();
+  const res = db.prepare(`SELECT * FROM document_type WHERE code = ?`).get(cleanCode) as unknown as DocumentType | undefined;
   return res || null;
 }
 
-export function createDocumentType(data: CreateDocumentTypeInput, audit: boolean = true): DocumentTypeEntity {
+export function createDocumentType(data: CreateDocumentTypeInput, audit: boolean = true): DocumentType {
   if (data.owner_scope !== 'IDENTITY' && data.owner_scope !== 'REGISTRATION') {
     throw new Error(`Invalid owner_scope "${data.owner_scope}". Must be IDENTITY or REGISTRATION.`);
   }

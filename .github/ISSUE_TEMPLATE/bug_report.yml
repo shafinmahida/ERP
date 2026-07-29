@@ -1,0 +1,48 @@
+name: Bug Report
+description: Report a bug or error encountered in Dayar-E-Habib ERP
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please ensure that this bug report provides exact reproduction steps and empirical log output.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Provide a clear description of what happened and what the expected behavior was.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: List exact steps to reproduce the issue.
+      placeholder: |
+        1. Open Pilgrim Directory
+        2. Click '+ New Registration'
+        3. Select Customer #1
+        4. Observe behavior...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Stack Trace / Error Logs
+      description: Copy and paste un-truncated error log output or terminal tracebacks here.
+      render: shell
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Execution Environment
+      options:
+        - Windows Desktop (Tauri)
+        - Web Browser (Vite Dev Server)
+        - Node.js Script Harness
+    validations:
+      required: true

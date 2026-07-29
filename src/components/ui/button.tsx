@@ -9,23 +9,23 @@ export function cn(...inputs: any[]) {
 }
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-bold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#856936] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 cursor-pointer active:scale-[0.98]',
   {
     variants: {
       variant: {
-        default: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm',
-        outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
-        gold: 'bg-amber-500 text-slate-950 font-semibold hover:bg-amber-400 shadow-sm',
+        default: 'bg-[#856936] text-white hover:bg-[#6E562B] shadow-2xs border border-[#755B2E]',
+        gold: 'bg-[#856936] text-white hover:bg-[#6E562B] shadow-2xs border border-[#755B2E]',
+        destructive: 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200 shadow-2xs',
+        outline: 'border border-[#E2D7C3] bg-white text-[#1E1A16] hover:bg-[#F5EFE2] hover:border-[#D4C5A9] shadow-2xs',
+        secondary: 'bg-[#F2ECE0] text-[#1E1A16] hover:bg-[#EAE2D2] border border-[#E2D7C3]',
+        ghost: 'hover:bg-[#F5EFE2] text-[#1E1A16] hover:text-[#856936]',
+        link: 'text-[#856936] underline-offset-4 hover:underline font-semibold',
       },
       size: {
-        default: 'h-9 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-md px-8 text-base',
-        icon: 'h-9 w-9',
+        default: 'h-9 px-4 py-2 text-xs',
+        sm: 'h-8 rounded-md px-3 text-[11px]',
+        lg: 'h-10 rounded-lg px-6 text-sm',
+        icon: 'h-8 w-8 rounded-lg',
       },
     },
     defaultVariants: {

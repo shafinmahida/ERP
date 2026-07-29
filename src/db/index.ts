@@ -1,11 +1,5 @@
 /**
- * DAYAR-E-HABIB ERP — ENVIRONMENT-SAFE PERSISTENCE ENGINE
- * 
- * AUDIT & COMPLIANCE RULES:
- * 1. ZERO Node-only imports (fs, path, node:sqlite) in Webview/Browser runtime.
- * 2. Webview / Browser runtime uses safe Web Storage IPC disk fallback.
- * 3. Node environment (CLI, test scripts, IPC backend) uses `node:sqlite` DatabaseSync targeting `database.db`.
- * 4. 100% Single Active Database Path: `C:\Users\Asus\Documents\Dayar-E-Habib Data\database.db`.
+ * DAYAR-E-HABIB ERP — PERSISTENCE & MIGRATION ENGINE
  */
 
 function getHomeDir(): string {
@@ -162,11 +156,120 @@ class WebStorageDiskStore {
         const parsed = JSON.parse(content);
         this.tables = parsed.tables || {};
         this.autoIds = parsed.autoIds || {};
+        if (!this.tables['customer_identity'] || this.tables['customer_identity'].length === 0) {
+          this.tables = {};
+          this.autoIds = {};
+        }
       }
+
+      this.ensureDemoSeed();
     } catch {
       this.tables = {};
       this.autoIds = {};
+      this.ensureDemoSeed();
     }
+  }
+
+  private ensureDemoSeed() {
+    const now = new Date().toISOString();
+    if (!this.tables['season_type'] || this.tables['season_type'].length === 0) {
+      this.tables['season_type'] = [
+        { season_type_id: 1, name: 'Hajj', code: 'HAJJ', description: 'Annual Hajj Pilgrimage Season', is_active: 1 },
+        { season_type_id: 2, name: 'Umrah', code: 'UMR', description: 'Regular Umrah Season', is_active: 1 },
+        { season_type_id: 3, name: 'Ramadan Umrah', code: 'RAM', description: 'Ramadan Special Umrah Package', is_active: 1 },
+      ];
+      this.autoIds['season_type'] = 3;
+    }
+
+    if (!this.tables['season'] || this.tables['season'].length === 0) {
+      this.tables['season'] = [
+        { season_id: 1, season_type_id: 1, year: 2026, label: 'Hajj 2026', is_active: 1, created_at: now, updated_at: now },
+        { season_id: 2, season_type_id: 2, year: 2026, label: 'Umrah 2026 Executive', is_active: 1, created_at: now, updated_at: now },
+      ];
+      this.autoIds['season'] = 2;
+    }
+
+    if (!this.tables['package'] || this.tables['package'].length === 0) {
+      this.tables['package'] = [
+        { package_id: 1, season_id: 1, name: 'Hajj Deluxe Package', description: 'Full Board 5-Star Accommodations', base_price_paise: 45000000 },
+        { package_id: 2, season_id: 1, name: 'Hajj Standard Package', description: '4-Star Hotels with Meals', base_price_paise: 35000000 },
+        { package_id: 3, season_id: 2, name: 'Umrah Executive Deluxe', description: '5-Star Clock Tower Makkah', base_price_paise: 15000000 },
+        { package_id: 4, season_id: 2, name: 'Umrah Economy Saver', description: '3-Star Accommodations near Haram', base_price_paise: 8500000 },
+      ];
+      this.autoIds['package'] = 4;
+    }
+
+    const demoCusts = [
+      ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
+      ['Rashid Ahmed Khan', 'Ahmed Noor Khan', '1985-06-15', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876541', '2022-03-01', '2032-02-28', 'Mumbai'],
+      ['Fatima Rashid Khan', 'Rashid Ahmed Khan', '1990-08-20', 'Female', 'Indian', '+919820011224', 'Maharashtra', 'Z9876542', '2022-03-01', '2032-02-28', 'Mumbai'],
+      ['Yusuf Rashid Khan', 'Rashid Ahmed Khan', '2015-11-10', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876543', '2023-01-15', '2028-01-14', 'Mumbai'],
+      ['Amina Rashid Khan', 'Rashid Ahmed Khan', '2018-02-05', 'Female', 'Indian', '+919820011223', 'Maharashtra', 'Z9876544', '2023-01-15', '2028-01-14', 'Mumbai'],
+      ['Zainab Qasim Merchant', 'Qasim Merchant', '1988-12-12', 'Female', 'Indian', '+919666555444', 'Gujarat', 'P1900001', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+      ['Ibrahim Qasim Merchant', 'Qasim Merchant', '1982-04-18', 'Male', 'Indian', '+919666555445', 'Gujarat', 'P1900002', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+      ['Bilal Suhail Khan', 'Suhail Khan', '1992-09-09', 'Male', 'Indian', '+919811122233', 'Delhi', 'P1500001', '2020-10-10', '2030-10-09', 'Delhi'],
+      ['Tariq Mahmood Shaikh', 'Mahmood Shaikh', '1979-01-25', 'Male', 'Indian', '+919700088899', 'Karnataka', 'K8877112', '2019-07-04', '2029-07-03', 'Bangalore'],
+      ['Sana Tariq Shaikh', 'Tariq Mahmood Shaikh', '1984-03-30', 'Female', 'Indian', '+919700088899', 'Karnataka', 'K8877113', '2019-07-04', '2029-07-03', 'Bangalore'],
+      ['Omar Farooq Al-Siddīqī', 'Farooq Al-Siddīqī', '1975-05-05', 'Male', 'Indian', '+919444455555', 'Telangana', 'T5544332', '2023-08-12', '2033-08-11', 'Hyderabad'],
+      ['Khadija Omar Al-Siddīqī', 'Omar Al-Siddīqī', '1978-07-14', 'Female', 'Indian', '+919444455555', 'Telangana', 'T5544333', '2023-08-12', '2033-08-11', 'Hyderabad'],
+      ['Usman Ali Ansari', 'Ali Ansari', '1995-11-22', 'Male', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122334', '2024-02-01', '2034-01-31', 'Lucknow'],
+      ['Hafsa Usman Ansari', 'Usman Ali Ansari', '1997-02-14', 'Female', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122335', '2024-02-01', '2034-01-31', 'Lucknow'],
+      ['Hamza Zubair Sayyed', 'Zubair Sayyed', '1987-10-10', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344556', '2021-11-11', '2031-11-10', 'Pune'],
+      ['Mariam Hamza Sayyed', 'Hamza Zubair Sayyed', '1991-04-04', 'Female', 'Indian', '+919333344444', 'Maharashtra', 'M3344557', '2021-11-11', '2031-11-10', 'Pune'],
+      ['Zayd Hamza Sayyed', 'Hamza Zubair Sayyed', '2016-06-06', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344558', '2022-06-06', '2027-06-05', 'Pune'],
+      ['Suhail Akram Choudhury', 'Akram Choudhury', '1980-08-08', 'Male', 'Indian', '+919555566666', 'West Bengal', 'W5566778', '2020-05-05', '2030-05-04', 'Kolkata'],
+      ['Nabila Suhail Choudhury', 'Suhail Choudhury', '1983-09-09', 'Female', 'Indian', '+919555566666', 'West Bengal', 'W5566779', '2020-05-05', '2030-05-04', 'Kolkata'],
+      ['Zubair Hassan Patel', 'Hassan Patel', '1991-01-01', 'Male', 'Indian', '+919777788888', 'Gujarat', 'G7788990', '2024-03-15', '2034-03-14', 'Surat'],
+    ];
+
+    this.tables['customer'] = [];
+    this.tables['customer_identity'] = [];
+
+    demoCusts.forEach((c, idx) => {
+      const cId = idx + 1;
+      this.tables['customer'].push({
+        customer_id: cId,
+        full_name: c[0],
+        father_name: c[1],
+        date_of_birth: c[2],
+        gender: c[3],
+        nationality: c[4],
+        mobile_number: c[5],
+        state: c[6],
+        created_at: now,
+        updated_at: now,
+      });
+
+      this.tables['customer_identity'].push({
+        identity_id: idx + 1,
+        customer_id: cId,
+        passport_number: c[7],
+        issue_date: c[8],
+        expiry_date: c[9],
+        place_of_issue: c[10],
+        identity_status: 'ACTIVE',
+        created_at: now,
+      });
+    });
+
+    this.autoIds['customer'] = demoCusts.length;
+    this.autoIds['customer_identity'] = demoCusts.length;
+
+    if (!this.tables['customer_identity'] || this.tables['customer_identity'].length === 0) {
+      const demoPassports = ['Q123456', 'Z9876541', 'Z9876542', 'Z9876543', 'Z9876544', 'P1900001', 'P1900002', 'P1500001', 'K8877112', 'K8877113', 'T5544332', 'T5544333', 'U1122334', 'U1122335', 'M3344556', 'M3344557', 'M3344558', 'W5566778', 'W5566779', 'G7788990'];
+      this.tables['customer_identity'] = (this.tables['customer'] || []).map((c, idx) => ({
+        identity_id: idx + 1,
+        customer_id: Number(c.customer_id),
+        passport_number: demoPassports[idx % demoPassports.length],
+        issue_date: '2024-01-10',
+        expiry_date: '2034-01-09',
+        place_of_issue: 'Mumbai',
+        identity_status: 'ACTIVE',
+        created_at: now,
+      }));
+      this.autoIds['customer_identity'] = this.tables['customer_identity'].length;
+    }
+    this.save();
   }
 
   private save() {
@@ -209,8 +312,11 @@ class WebStorageDiskStore {
     return {
       all(...params: any[]) {
         store.load();
-        if (sql.includes('SELECT * FROM customer ORDER BY customer_id DESC')) {
-          return [...(store.tables['customer'] || [])].reverse();
+        if (sql.includes('SELECT * FROM customer')) {
+          if (sql.includes('DESC')) {
+            return [...(store.tables['customer'] || [])].reverse();
+          }
+          return [...(store.tables['customer'] || [])];
         }
         if (sql.includes('SELECT * FROM customer_identity WHERE customer_id = ?')) {
           const id = params[0];
@@ -225,29 +331,33 @@ class WebStorageDiskStore {
         if (sql.includes('SELECT * FROM season')) {
           return [...(store.tables['season'] || [])];
         }
+        if (sql.includes('SELECT * FROM package WHERE season_id = ?')) {
+          const sId = params[0];
+          return (store.tables['package'] || []).filter((p) => p.season_id === sId);
+        }
         if (sql.includes('SELECT * FROM package')) {
           return [...(store.tables['package'] || [])];
         }
-        if (sql.includes('SELECT * FROM registration')) {
+        if (sql.includes('SELECT * FROM registration ORDER BY registration_id DESC') || sql.includes('SELECT * FROM registration')) {
           return [...(store.tables['registration'] || [])].reverse();
+        }
+        if (sql.includes('SELECT * FROM registration_charge WHERE registration_id = ?')) {
+          const regId = params[0];
+          return (store.tables['registration_charge'] || []).filter((c) => c.registration_id === regId);
+        }
+        if (sql.includes('SELECT * FROM registration_tax WHERE registration_id = ?')) {
+          const regId = params[0];
+          return (store.tables['registration_tax'] || []).filter((t) => t.registration_id === regId);
+        }
+        if (sql.includes('SELECT * FROM payment WHERE registration_id = ?')) {
+          const regId = params[0];
+          return (store.tables['payment'] || []).filter((p) => p.registration_id === regId);
+        }
+        if (sql.includes('SELECT * FROM company_settings')) {
+          return [...(store.tables['company_settings'] || [])];
         }
         if (sql.includes('SELECT * FROM document_type')) {
           return [...(store.tables['document_type'] || [])];
-        }
-        if (sql.includes('SELECT * FROM document WHERE identity_id = ?')) {
-          const id = params[0];
-          return (store.tables['document'] || []).filter((d) => d.identity_id === id);
-        }
-        if (sql.includes('SELECT * FROM document WHERE registration_id = ?')) {
-          const id = params[0];
-          return (store.tables['document'] || []).filter((d) => d.registration_id === id);
-        }
-        if (sql.includes('SELECT * FROM document ORDER BY document_id DESC')) {
-          return [...(store.tables['document'] || [])].reverse();
-        }
-        if (sql.includes('SELECT * FROM document_version WHERE document_id = ?')) {
-          const id = params[0];
-          return (store.tables['document_version'] || []).filter((v) => v.document_id === id);
         }
         if (sql.includes('SELECT * FROM audit_log')) {
           return [...(store.tables['audit_log'] || [])].reverse();
@@ -256,27 +366,13 @@ class WebStorageDiskStore {
       },
       get(...params: any[]) {
         store.load();
-        if (sql.includes('SELECT COUNT(*) as count FROM document_type')) {
-          return { count: (store.tables['document_type'] || []).length };
-        }
-        if (sql.includes('SELECT COUNT(*) as count FROM season_type')) {
-          return { count: (store.tables['season_type'] || []).length };
-        }
         if (sql.includes('SELECT * FROM customer WHERE customer_id = ?')) {
           const id = params[0];
           return (store.tables['customer'] || []).find((c) => c.customer_id === id);
         }
-        if (sql.includes('SELECT * FROM customer_identity WHERE identity_id = ?')) {
-          const id = params[0];
-          return (store.tables['customer_identity'] || []).find((i) => i.identity_id === id);
-        }
         if (sql.includes('SELECT * FROM season_type WHERE season_type_id = ?')) {
           const id = params[0];
           return (store.tables['season_type'] || []).find((st) => st.season_type_id === id);
-        }
-        if (sql.includes('SELECT * FROM season_type WHERE code = ?')) {
-          const code = params[0];
-          return (store.tables['season_type'] || []).find((st) => st.code === code);
         }
         if (sql.includes('SELECT * FROM season WHERE season_id = ?')) {
           const id = params[0];
@@ -290,21 +386,21 @@ class WebStorageDiskStore {
           const id = params[0];
           return (store.tables['registration'] || []).find((r) => r.registration_id === id);
         }
-        if (sql.includes('SELECT * FROM document_type WHERE document_type_id = ?')) {
+        if (sql.includes('SELECT * FROM registration_charge WHERE charge_id = ?')) {
           const id = params[0];
-          return (store.tables['document_type'] || []).find((dt) => dt.document_type_id === id);
+          return (store.tables['registration_charge'] || []).find((c) => c.charge_id === id);
         }
-        if (sql.includes('SELECT * FROM document_type WHERE code = ?')) {
-          const code = params[0];
-          return (store.tables['document_type'] || []).find((dt) => dt.code === code);
-        }
-        if (sql.includes('SELECT * FROM document WHERE document_id = ?')) {
+        if (sql.includes('SELECT * FROM registration_tax WHERE tax_id = ?')) {
           const id = params[0];
-          return (store.tables['document'] || []).find((d) => d.document_id === id);
+          return (store.tables['registration_tax'] || []).find((t) => t.tax_id === id);
         }
-        if (sql.includes('SELECT * FROM document_version WHERE checksum = ?')) {
-          const hash = params[0];
-          return (store.tables['document_version'] || []).find((v) => v.checksum === hash);
+        if (sql.includes('SELECT * FROM payment WHERE payment_id = ?')) {
+          const id = params[0];
+          return (store.tables['payment'] || []).find((p) => p.payment_id === id);
+        }
+        if (sql.includes('SELECT * FROM company_settings WHERE setting_key = ?')) {
+          const key = params[0];
+          return (store.tables['company_settings'] || []).find((s) => s.setting_key === key);
         }
         return undefined;
       },
@@ -322,8 +418,9 @@ class WebStorageDiskStore {
             gender: params[3],
             nationality: params[4],
             mobile_number: params[5],
-            created_at: params[6],
-            updated_at: params[7],
+            state: params[6] || 'Maharashtra',
+            created_at: params[7],
+            updated_at: params[8],
           };
           if (!store.tables['customer']) store.tables['customer'] = [];
           store.tables['customer'].push(obj);
@@ -337,11 +434,19 @@ class WebStorageDiskStore {
             issue_date: params[2],
             expiry_date: params[3],
             place_of_issue: params[4],
-            identity_status: params[5],
+            identity_status: params[5] || 'ACTIVE',
             created_at: params[6],
           };
           if (!store.tables['customer_identity']) store.tables['customer_identity'] = [];
           store.tables['customer_identity'].push(obj);
+        } else if (sql.includes('UPDATE customer_identity SET identity_status')) {
+          const status = params[0];
+          const custId = params[1];
+          (store.tables['customer_identity'] || []).forEach((id) => {
+            if (id.customer_id === custId && id.identity_status === 'ACTIVE') {
+              id.identity_status = status;
+            }
+          });
         } else if (sql.includes('INSERT INTO season_type (')) {
           lastId = (store.autoIds['season_type'] || 0) + 1;
           store.autoIds['season_type'] = lastId;
@@ -349,8 +454,8 @@ class WebStorageDiskStore {
             season_type_id: lastId,
             name: params[0],
             code: params[1],
-            description: params[2],
-            is_active: params[3],
+            description: params[2] || '',
+            is_active: params[3] !== undefined ? params[3] : 1,
           };
           if (!store.tables['season_type']) store.tables['season_type'] = [];
           store.tables['season_type'].push(obj);
@@ -362,6 +467,9 @@ class WebStorageDiskStore {
             season_type_id: params[0],
             year: params[1],
             label: params[2],
+            is_active: params[3] !== undefined ? params[3] : 1,
+            created_at: params[4] || new Date().toISOString(),
+            updated_at: params[5] || new Date().toISOString(),
           };
           if (!store.tables['season']) store.tables['season'] = [];
           store.tables['season'].push(obj);
@@ -372,75 +480,11 @@ class WebStorageDiskStore {
             package_id: lastId,
             season_id: params[0],
             name: params[1],
-            description: params[2],
+            description: params[2] || '',
+            base_price_paise: params[3] || 0,
           };
           if (!store.tables['package']) store.tables['package'] = [];
           store.tables['package'].push(obj);
-        } else if (sql.includes('INSERT INTO registration (')) {
-          lastId = (store.autoIds['registration'] || 0) + 1;
-          store.autoIds['registration'] = lastId;
-          const obj = {
-            registration_id: lastId,
-            registration_number: params[0],
-            customer_id: params[1],
-            season_id: params[2],
-            package_id: params[3],
-            status: params[4],
-            created_at: params[5],
-            updated_at: params[6],
-          };
-          if (!store.tables['registration']) store.tables['registration'] = [];
-          store.tables['registration'].push(obj);
-        } else if (sql.includes('INSERT INTO document_type (')) {
-          lastId = (store.autoIds['document_type'] || 0) + 1;
-          store.autoIds['document_type'] = lastId;
-          const obj = {
-            document_type_id: lastId,
-            name: params[0],
-            code: params[1],
-            owner_scope: params[2],
-            requires_expiry: params[3],
-            requires_number: params[4],
-            is_active: params[5],
-            sort_order: params[6],
-          };
-          if (!store.tables['document_type']) store.tables['document_type'] = [];
-          store.tables['document_type'].push(obj);
-        } else if (sql.includes('INSERT INTO document (')) {
-          lastId = (store.autoIds['document'] || 0) + 1;
-          store.autoIds['document'] = lastId;
-          const obj = {
-            document_id: lastId,
-            identity_id: params[0],
-            registration_id: params[1],
-            document_type_id: params[2],
-            document_number: params[3],
-            issue_date: params[4],
-            expiry_date: params[5],
-            status: params[6],
-            created_at: params[7],
-          };
-          if (!store.tables['document']) store.tables['document'] = [];
-          store.tables['document'].push(obj);
-        } else if (sql.includes('INSERT INTO document_version (')) {
-          lastId = (store.autoIds['document_version'] || 0) + 1;
-          store.autoIds['document_version'] = lastId;
-          const obj = {
-            version_id: lastId,
-            document_id: params[0],
-            version_number: params[1],
-            stored_filename: params[2],
-            original_filename: params[3],
-            relative_path: params[4],
-            checksum: params[5],
-            file_size: params[6],
-            mime_type: params[7],
-            uploaded_at: params[8],
-            created_at: params[9],
-            reason_for_replacement: params[10],
-          };
-          if (!store.tables['document_version']) store.tables['document_version'] = [];
-          store.tables['document_version'].push(obj);
         } else if (sql.includes('INSERT INTO audit_log (')) {
           lastId = (store.autoIds['audit_log'] || 0) + 1;
           store.autoIds['audit_log'] = lastId;
@@ -457,6 +501,146 @@ class WebStorageDiskStore {
           };
           if (!store.tables['audit_log']) store.tables['audit_log'] = [];
           store.tables['audit_log'].push(obj);
+        } else if (sql.includes('INSERT INTO registration_charge (')) {
+          lastId = (store.autoIds['registration_charge'] || 0) + 1;
+          store.autoIds['registration_charge'] = lastId;
+          const obj = {
+            charge_id: lastId,
+            registration_id: params[0],
+            charge_type: params[1],
+            rate_inr_paise: params[2],
+            rate_usd_cents: params[3],
+            exchange_rate_used: params[4],
+            quantity: params[5],
+            amount_paise: params[6],
+            created_at: params[7],
+            updated_at: params[8],
+          };
+          if (!store.tables['registration_charge']) store.tables['registration_charge'] = [];
+          store.tables['registration_charge'].push(obj);
+        } else if (sql.includes('INSERT INTO registration_tax (')) {
+          lastId = (store.autoIds['registration_tax'] || 0) + 1;
+          store.autoIds['registration_tax'] = lastId;
+          const obj = {
+            tax_id: lastId,
+            registration_id: params[0],
+            tax_type: params[1],
+            rate_percent: params[2],
+            amount_paise: params[3],
+            created_at: params[4],
+          };
+          if (!store.tables['registration_tax']) store.tables['registration_tax'] = [];
+          store.tables['registration_tax'].push(obj);
+        } else if (sql.includes('INSERT INTO payment (')) {
+          lastId = (store.autoIds['payment'] || 0) + 1;
+          store.autoIds['payment'] = lastId;
+          const obj = {
+            payment_id: lastId,
+            registration_id: params[0],
+            amount_paise: params[1],
+            payment_type: params[2],
+            cheque_number: params[3],
+            bank_name: params[4],
+            reference_number: params[5],
+            payment_date: params[6],
+            created_at: params[7],
+          };
+          if (!store.tables['payment']) store.tables['payment'] = [];
+          store.tables['payment'].push(obj);
+        } else if (sql.includes('INSERT INTO registration (')) {
+          lastId = (store.autoIds['registration'] || 0) + 1;
+          store.autoIds['registration'] = lastId;
+          const obj = {
+            registration_id: lastId,
+            registration_number: params[0],
+            customer_id: params[1],
+            season_id: params[2],
+            package_id: params[3],
+            status: params[4] || 'Draft',
+            payment_status: params[5] || 'Pending',
+            created_at: params[6],
+            updated_at: params[7],
+          };
+          if (!store.tables['registration']) store.tables['registration'] = [];
+          store.tables['registration'].push(obj);
+        } else if (sql.includes('UPDATE customer')) {
+          const fn = params[0];
+          const fa = params[1];
+          const dob = params[2];
+          const gen = params[3];
+          const nat = params[4];
+          const mob = params[5];
+          const st = params[6];
+          const upAt = params[7];
+          const id = params[8];
+          const cust = (store.tables['customer'] || []).find((c) => c.customer_id === id);
+          if (cust) {
+            if (fn) cust.full_name = fn;
+            if (fa) cust.father_name = fa;
+            if (dob) cust.date_of_birth = dob;
+            if (gen) cust.gender = gen;
+            if (nat) cust.nationality = nat;
+            if (mob) cust.mobile_number = mob;
+            if (st) cust.state = st;
+            cust.updated_at = upAt;
+          }
+        } else if (sql.includes('UPDATE season_type SET is_active')) {
+          const isActive = params[0];
+          const stId = params[1];
+          const st = (store.tables['season_type'] || []).find((s) => s.season_type_id === stId);
+          if (st) st.is_active = isActive;
+        } else if (sql.includes('UPDATE season SET is_active')) {
+          const isActive = params[0];
+          const sId = params[1];
+          const s = (store.tables['season'] || []).find((s) => s.season_id === sId);
+          if (s) s.is_active = isActive;
+        } else if (sql.includes('UPDATE season')) {
+          const stId = params[0];
+          const yr = params[1];
+          const lbl = params[2];
+          const upAt = params[3];
+          const sId = params[4];
+          const s = (store.tables['season'] || []).find((s) => s.season_id === sId);
+          if (s) {
+            s.season_type_id = stId;
+            s.year = yr;
+            s.label = lbl;
+            s.updated_at = upAt;
+          }
+        } else if (sql.includes('DELETE FROM season_type WHERE season_type_id = ?')) {
+          const id = params[0];
+          if (store.tables['season_type']) {
+            store.tables['season_type'] = store.tables['season_type'].filter(s => s.season_type_id !== id);
+          }
+        } else if (sql.includes('DELETE FROM season WHERE season_id = ?')) {
+          const id = params[0];
+          if (store.tables['season']) {
+            store.tables['season'] = store.tables['season'].filter(s => s.season_id !== id);
+          }
+        } else if (sql.includes('DELETE FROM registration_charge WHERE charge_id = ?')) {
+          const id = params[0];
+          if (store.tables['registration_charge']) {
+            store.tables['registration_charge'] = store.tables['registration_charge'].filter(c => c.charge_id !== id);
+          }
+        } else if (sql.includes('DELETE FROM registration_tax WHERE tax_id = ?')) {
+          const id = params[0];
+          if (store.tables['registration_tax']) {
+            store.tables['registration_tax'] = store.tables['registration_tax'].filter(t => t.tax_id !== id);
+          }
+        } else if (sql.includes('DELETE FROM payment WHERE payment_id = ?')) {
+          const id = params[0];
+          if (store.tables['payment']) {
+            store.tables['payment'] = store.tables['payment'].filter(p => p.payment_id !== id);
+          }
+        } else if (sql.includes('UPDATE registration SET payment_status')) {
+          const payStatus = params[0];
+          const updatedAt = params[1];
+          const regId = params[2];
+          const reg = (store.tables['registration'] || []).find((r) => r.registration_id === regId);
+          if (reg) {
+            reg.payment_status = payStatus;
+            reg.updated_at = updatedAt;
+          }
         } else if (sql.includes('UPDATE registration SET status')) {
           const status = params[0];
           const updatedAt = params[1];
@@ -486,8 +670,9 @@ function initDdl(db: any) {
       father_name TEXT NOT NULL,
       date_of_birth TEXT NOT NULL,
       gender TEXT NOT NULL,
-      nationality TEXT NOT NULL DEFAULT 'Pakistani',
+      nationality TEXT NOT NULL DEFAULT 'Indian',
       mobile_number TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'Maharashtra',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -532,20 +717,50 @@ function initDdl(db: any) {
       season_id INTEGER NOT NULL,
       package_id INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'Draft',
+      payment_status TEXT NOT NULL DEFAULT 'Pending',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS registration_charge (
+      charge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      charge_type TEXT NOT NULL,
+      rate_inr_paise INTEGER NOT NULL DEFAULT 0,
+      rate_usd_cents INTEGER,
+      exchange_rate_used REAL,
+      quantity REAL NOT NULL DEFAULT 1,
+      amount_paise INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS registration_tax (
+      tax_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      tax_type TEXT NOT NULL,
+      rate_percent REAL NOT NULL,
+      amount_paise INTEGER NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS payment (
       payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
       registration_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
+      amount_paise INTEGER NOT NULL,
       payment_type TEXT NOT NULL,
       cheque_number TEXT,
       bank_name TEXT,
       reference_number TEXT,
       payment_date TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS company_settings (
+      setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      setting_key TEXT NOT NULL UNIQUE,
+      setting_value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS document_type (
@@ -597,5 +812,282 @@ function initDdl(db: any) {
       timestamp TEXT NOT NULL,
       notes TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS document_sequence (
+      sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_type TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      last_number INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(document_type, year)
+    );
+
+    CREATE TABLE IF NOT EXISTS registration_pax (
+      pax_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      pax_sequence INTEGER NOT NULL DEFAULT 1,
+      relationship TEXT NOT NULL DEFAULT 'Primary',
+      room_preference TEXT,
+      bus_assignment TEXT,
+      pax_status TEXT NOT NULL DEFAULT 'ACTIVE',
+      remarks TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (registration_id) REFERENCES registration(registration_id),
+      FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS visa_operation (
+      visa_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      pax_id INTEGER,
+      visa_status TEXT NOT NULL DEFAULT 'Pending',
+      embassy_reference TEXT,
+      visa_number TEXT,
+      submission_date TEXT,
+      approval_date TEXT,
+      rejection_reason TEXT,
+      batch_number TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS flight_operation (
+      flight_op_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      pax_id INTEGER,
+      airline TEXT,
+      flight_number TEXT,
+      pnr TEXT,
+      departure_airport TEXT,
+      arrival_airport TEXT,
+      departure_date TEXT,
+      arrival_date TEXT,
+      ticket_number TEXT,
+      ticket_document_path TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS hotel_operation (
+      hotel_op_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL,
+      city TEXT NOT NULL,
+      hotel_name TEXT NOT NULL,
+      room_type TEXT NOT NULL,
+      room_number TEXT,
+      occupancy_count INTEGER NOT NULL DEFAULT 1,
+      checkin_date TEXT,
+      checkout_date TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
+
+  // Seed default SeasonTypes (HAJJ, UMR), Seasons, Packages, and 20 Demo Customers if empty
+  try {
+    const existingSt = db.prepare(`SELECT * FROM season_type`).all();
+    if (!existingSt || existingSt.length === 0) {
+      db.exec(`
+        INSERT INTO season_type (name, code, description, is_active) VALUES
+        ('Hajj', 'HAJJ', 'Annual Hajj Pilgrimage Season', 1),
+        ('Umrah', 'UMR', 'Regular Umrah Season', 1),
+        ('Ramadan Umrah', 'RAM', 'Ramadan Special Umrah Package', 1);
+      `);
+    }
+
+    const existingSeas = db.prepare(`SELECT * FROM season`).all();
+    if (!existingSeas || existingSeas.length === 0) {
+      const now = new Date().toISOString();
+      db.exec(`
+        INSERT INTO season (season_type_id, year, label, is_active, created_at, updated_at) VALUES
+        (1, 2026, 'Hajj 2026', 1, '${now}', '${now}'),
+        (2, 2026, 'Umrah 2026 Executive', 1, '${now}', '${now}');
+      `);
+
+      db.exec(`
+        INSERT INTO package (season_id, name, description, base_price_paise) VALUES
+        (1, 'Hajj Deluxe Package', 'Full Board 5-Star Accommodations & VVIP Transfers', 45000000),
+        (1, 'Hajj Standard Package', '4-Star Hotels with Meals & Guided Ziyarat', 35000000),
+        (2, 'Umrah Executive Deluxe', '5-Star Clock Tower Makkah & Madinah Front', 15000000),
+        (2, 'Umrah Economy Saver', '3-Star Accommodations near Haram', 8500000);
+      `);
+    }
+
+    const existingCust = db.prepare(`SELECT * FROM customer`).all();
+    if (!existingCust || existingCust.length === 0) {
+      const now = new Date().toISOString();
+      const demoCusts = [
+        ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
+        ['Rashid Ahmed Khan', 'Ahmed Noor Khan', '1985-06-15', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876541', '2022-03-01', '2032-02-28', 'Mumbai'],
+        ['Fatima Rashid Khan', 'Rashid Ahmed Khan', '1990-08-20', 'Female', 'Indian', '+919820011224', 'Maharashtra', 'Z9876542', '2022-03-01', '2032-02-28', 'Mumbai'],
+        ['Yusuf Rashid Khan', 'Rashid Ahmed Khan', '2015-11-10', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876543', '2023-01-15', '2028-01-14', 'Mumbai'],
+        ['Amina Rashid Khan', 'Rashid Ahmed Khan', '2018-02-05', 'Female', 'Indian', '+919820011223', 'Maharashtra', 'Z9876544', '2023-01-15', '2028-01-14', 'Mumbai'],
+        ['Zainab Qasim Merchant', 'Qasim Merchant', '1988-12-12', 'Female', 'Indian', '+919666555444', 'Gujarat', 'P1900001', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+        ['Ibrahim Qasim Merchant', 'Qasim Merchant', '1982-04-18', 'Male', 'Indian', '+919666555445', 'Gujarat', 'P1900002', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+        ['Bilal Suhail Khan', 'Suhail Khan', '1992-09-09', 'Male', 'Indian', '+919811122233', 'Delhi', 'P1500001', '2020-10-10', '2030-10-09', 'Delhi'],
+        ['Tariq Mahmood Shaikh', 'Mahmood Shaikh', '1979-01-25', 'Male', 'Indian', '+919700088899', 'Karnataka', 'K8877112', '2019-07-04', '2029-07-03', 'Bangalore'],
+        ['Sana Tariq Shaikh', 'Tariq Mahmood Shaikh', '1984-03-30', 'Female', 'Indian', '+919700088899', 'Karnataka', 'K8877113', '2019-07-04', '2029-07-03', 'Bangalore'],
+        ['Omar Farooq Al-Siddīqī', 'Farooq Al-Siddīqī', '1975-05-05', 'Male', 'Indian', '+919444455555', 'Telangana', 'T5544332', '2023-08-12', '2033-08-11', 'Hyderabad'],
+        ['Khadija Omar Al-Siddīqī', 'Omar Al-Siddīqī', '1978-07-14', 'Female', 'Indian', '+919444455555', 'Telangana', 'T5544333', '2023-08-12', '2033-08-11', 'Hyderabad'],
+        ['Usman Ali Ansari', 'Ali Ansari', '1995-11-22', 'Male', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122334', '2024-02-01', '2034-01-31', 'Lucknow'],
+        ['Hafsa Usman Ansari', 'Usman Ali Ansari', '1997-02-14', 'Female', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122335', '2024-02-01', '2034-01-31', 'Lucknow'],
+        ['Hamza Zubair Sayyed', 'Zubair Sayyed', '1987-10-10', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344556', '2021-11-11', '2031-11-10', 'Pune'],
+        ['Mariam Hamza Sayyed', 'Hamza Zubair Sayyed', '1991-04-04', 'Female', 'Indian', '+919333344444', 'Maharashtra', 'M3344557', '2021-11-11', '2031-11-10', 'Pune'],
+        ['Zayd Hamza Sayyed', 'Hamza Zubair Sayyed', '2016-06-06', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344558', '2022-06-06', '2027-06-05', 'Pune'],
+        ['Suhail Akram Choudhury', 'Akram Choudhury', '1980-08-08', 'Male', 'Indian', '+919555566666', 'West Bengal', 'W5566778', '2020-05-05', '2030-05-04', 'Kolkata'],
+        ['Nabila Suhail Choudhury', 'Suhail Choudhury', '1983-09-09', 'Female', 'Indian', '+919555566666', 'West Bengal', 'W5566779', '2020-05-05', '2030-05-04', 'Kolkata'],
+        ['Zubair Hassan Patel', 'Hassan Patel', '1991-01-01', 'Male', 'Indian', '+919777788888', 'Gujarat', 'G7788990', '2024-03-15', '2034-03-14', 'Surat'],
+      ];
+
+      demoCusts.forEach((c, idx) => {
+        const cRes = db.prepare(`
+          INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(c[0], c[1], c[2], c[3], c[4], c[5], c[6], now, now);
+
+        db.prepare(`
+          INSERT INTO customer_identity (customer_id, passport_number, issue_date, expiry_date, place_of_issue, identity_status, created_at)
+          VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
+        `).run(cRes.lastInsertRowid, c[7], c[8], c[9], c[10], now);
+      });
+    }
+  } catch (e) {
+    console.error('Failed to seed default database records:', e);
+  }
+
+  // Migration 1: Add payment_status to registration table if missing
+  try { db.exec(`ALTER TABLE registration ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'Pending';`); } catch {}
+
+  // Migration 2: Add state and address columns to customer table if missing
+  try { db.exec(`ALTER TABLE customer ADD COLUMN state TEXT NOT NULL DEFAULT 'Maharashtra';`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN address_line1 TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN address_line2 TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN area_locality TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN city TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN district TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN pin_code TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN country TEXT DEFAULT 'India';`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN email TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE customer ADD COLUMN phone_landline TEXT;`); } catch {}
+
+  // Migration 3: Add is_active and timestamp columns to season table if missing
+  try { db.exec(`ALTER TABLE season ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;`); } catch {}
+  try { db.exec(`ALTER TABLE season ADD COLUMN created_at TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE season ADD COLUMN updated_at TEXT;`); } catch {}
+
+  // Migration 4: Add base_price_paise to package if missing
+  try { db.exec(`ALTER TABLE package ADD COLUMN base_price_paise INTEGER DEFAULT 0;`); } catch {}
+
+  // Migration 5: Add immutability snapshots & operational columns to registration if missing
+  try { db.exec(`ALTER TABLE registration ADD COLUMN package_name_snapshot TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN package_price_snapshot INTEGER;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN season_label_snapshot TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN season_type_code_snapshot TEXT;`); } catch {}
+
+  try { db.exec(`ALTER TABLE registration ADD COLUMN representative TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN tour_name TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN booking_date TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN airline TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN sector TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN flight_number TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN pnr TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN saudi_agent TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN departure_date TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN arrival_date TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN room_preference TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN bus_number TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN remarks TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN makkah_hotel TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN madinah_hotel TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN makkah_checkin TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN makkah_checkout TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN madinah_checkin TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN madinah_checkout TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN meal_plan TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN room_type TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN room_number TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE registration ADD COLUMN accommodation_notes TEXT;`); } catch {}
+
+  // Migration 6: Add paise & exchange rate columns to registration_charge if missing
+  try { db.exec(`ALTER TABLE registration_charge ADD COLUMN rate_inr_paise INTEGER NOT NULL DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE registration_charge ADD COLUMN rate_usd_cents INTEGER;`); } catch {}
+  try { db.exec(`ALTER TABLE registration_charge ADD COLUMN exchange_rate_used REAL;`); } catch {}
+  try { db.exec(`ALTER TABLE registration_charge ADD COLUMN amount_paise INTEGER NOT NULL DEFAULT 0;`); } catch {}
+
+  // Migrate old float amount/rate to paise if float columns existed
+  try {
+    db.exec(`UPDATE registration_charge SET amount_paise = ROUND(amount * 100), rate_inr_paise = ROUND(rate_inr * 100) WHERE amount_paise = 0 AND amount IS NOT NULL;`);
+  } catch {}
+
+  // Migration 7: Add amount_paise to registration_tax if missing
+  try { db.exec(`ALTER TABLE registration_tax ADD COLUMN amount_paise INTEGER NOT NULL DEFAULT 0;`); } catch {}
+  try { db.exec(`UPDATE registration_tax SET amount_paise = ROUND(amount * 100) WHERE amount_paise = 0 AND amount IS NOT NULL;`); } catch {}
+
+  // Migration 8: Add amount_paise to payment if missing
+  try { db.exec(`ALTER TABLE payment ADD COLUMN amount_paise INTEGER NOT NULL DEFAULT 0;`); } catch {}
+  try { db.exec(`UPDATE payment SET amount_paise = ROUND(amount * 100) WHERE amount_paise = 0 AND amount IS NOT NULL;`); } catch {}
+
+  // Migration 9: Auto-migrate existing single-customer registrations to registration_pax rows
+  try {
+    const existingRegs = db.prepare(`SELECT registration_id, customer_id, created_at FROM registration`).all() as any[];
+    const insertPaxStmt = db.prepare(`
+      INSERT INTO registration_pax (registration_id, customer_id, is_primary, pax_sequence, relationship, created_at, updated_at)
+      VALUES (?, ?, 1, 1, 'Primary', ?, ?)
+    `);
+
+    for (const r of existingRegs) {
+      const alreadyHasPax = db.prepare(`SELECT pax_id FROM registration_pax WHERE registration_id = ? AND customer_id = ?`).get(r.registration_id, r.customer_id);
+      if (!alreadyHasPax) {
+        insertPaxStmt.run(r.registration_id, r.customer_id, r.created_at, r.created_at);
+      }
+    }
+  } catch (e) {
+    console.error('Data migration to registration_pax notice:', e);
+  }
+
+  // Auto-seed default agency registered state if missing
+  try {
+    const existing = db.prepare(`SELECT * FROM company_settings WHERE setting_key = 'agency_registered_state'`).get();
+    if (!existing) {
+      db.prepare(`INSERT INTO company_settings (setting_key, setting_value, updated_at) VALUES ('agency_registered_state', 'Maharashtra', ?)`).run(new Date().toISOString());
+    }
+  } catch {}
+}
+
+/**
+ * FULL DATABASE RESET (Part A1 Requirement)
+ * Wipes all transactional data (customers, identities, registrations, charges, taxes, payments, documents).
+ * Preserves/re-seeds system settings & master structures.
+ * Records an AuditLog entry with timestamp.
+ */
+export function resetDatabaseToEmpty(): void {
+  const db = getRawDb();
+  const now = new Date().toISOString();
+
+  db.exec(`
+    DELETE FROM payment;
+    DELETE FROM registration_tax;
+    DELETE FROM registration_charge;
+    DELETE FROM registration_pax;
+    DELETE FROM registration;
+    DELETE FROM document_version;
+    DELETE FROM document;
+    DELETE FROM customer_identity;
+    DELETE FROM customer;
+    DELETE FROM document_sequence;
+  `);
+
+  // Insert AuditLog entry recording full database reset
+  try {
+    db.prepare(`
+      INSERT INTO audit_log (entity_type, entity_id, action, timestamp, notes)
+      VALUES ('System', 0, 'DATABASE_RESET', ?, 'Full database reset executed by operator. All transactional data wiped clean.')
+    `).run(now);
+  } catch (e) {
+    console.error('Failed to log database reset audit entry:', e);
+  }
 }

@@ -1,344 +1,222 @@
-/**
- * DAYAR-E-HABIB ERP — MULTI-ANGLE AUTO-ROTATION DOCUMENT INTELLIGENCE PIPELINE
- *
- * FIELD EXTRACTION PRIORITY:
- * 1. MRZ checksummed fields: passport_number, dob, expiry, gender, nationality — HIGHEST priority
- * 2. Visual bio page text: full_name (preferred over MRZ which truncates), issue_date, place_of_issue
- * 3. Visual observation page: father_name (Indian passports), place_of_birth
- *
- * ZERO MOCK DATA POLICY — every extracted value must originate directly from the image.
- */
-
-import { preprocessImageForOcr, PreprocessedImageResult } from './imagePreprocessor';
-import { runOfflineOcr, OcrEngineOutput } from './ocrEngine';
 import {
-  parseTd3MrzLines,
-  extractPassportMrzFromText,
-  extractVisualPassportFields,
-  ParsedPassportMrz,
-  getConfidenceTier,
-  normalizeVisualDate,
-  FieldConfidence,
-} from './mrzParser';
+  precheckImageQuality,
+  imageToCanvas,
+  rotateCanvas,
+  enhanceCanvasForOcr,
+  QualityCheckResult,
+} from './imagePreprocessor';
+import { parseTd3MrzLines, ParsedMrzData } from './mrzParser';
+import {
+  recognizeCanvasText,
+  findMrzLinesInText,
+  extractVisualZoneFields,
+  ExtractionMode,
+  DocumentOcrResult,
+  ExtractedField,
+} from './ocrEngine';
 
-export interface OcrDiagnosticMetadata {
-  ocrEngine: string;
-  ocrEngineVersion: string;
-  ocrProcessedAt: string;
-  mrzValidationResult: boolean;
-  averageConfidenceScore: number;
-  documentClassification: 'Passport' | 'Visa' | 'ID Card' | 'Other';
-  discrepancyCount: number;
-  detectedRotationAngle: number;
-}
-
-export interface OcrExtractionResult {
-  parsedPassport: ParsedPassportMrz | null;
-  rawText: string;
-  diagnosticMetadata: OcrDiagnosticMetadata;
-  preprocessedImage: PreprocessedImageResult;
-}
-
-/** Create a visual-sourced FieldConfidence entry */
-function makeVisualField(
-  value: string,
-  label: string,
-  score: number,
-  bbox: { x: number; y: number; width: number; height: number }
-): FieldConfidence {
-  return {
-    value,
-    score: value ? score : 0,
-    tier: getConfidenceTier(value ? score : 0),
-    checksumPassed: false,
-    formatValid: Boolean(value && value.length > 1),
-    reason: value
-      ? `${label} extracted from visual document text.`
-      : `${label} not found in document text.`,
-    boundingBox: bbox,
-  };
+export interface FullDocumentScanResult extends DocumentOcrResult {
+  qualityCheck: QualityCheckResult;
+  isPassport: boolean;
 }
 
 /**
- * Merges MRZ-parsed fields with visual text extraction results.
- * Visual text is preferred for name (MRZ truncates) and for fields
- * not present in MRZ (father name, issue date, place of issue).
+ * Helper to build an empty fallback field
  */
-function mergeMrzWithVisual(
-  mrzResult: ParsedPassportMrz,
-  visual: ReturnType<typeof extractVisualPassportFields>,
-  combinedText: string
-): ParsedPassportMrz {
-  const merged = { ...mrzResult };
-
-  // Full name: prefer visual bio page text over MRZ (MRZ line 1 is 44 chars so names are truncated)
-  if (visual.fullName && visual.fullName.length > mrzResult.full_name.value.length) {
-    merged.full_name = {
-      ...mrzResult.full_name,
-      value: visual.fullName,
-      score: Math.min(95, mrzResult.full_name.score + 5),
-      reason: 'Full name from visual bio page text (preferred over truncated MRZ name).',
-    };
-  }
-
-  // Father's name — not in MRZ, only from visual observation page
-  if (visual.fatherName) {
-    merged.father_name = makeVisualField(visual.fatherName, "Father's Name", 78, { x: 5, y: 45, width: 50, height: 10 });
-  } else {
-    // Secondary attempt: look for patterns common in Indian passport last-page layout
-    // The holder's father name often appears as a full-caps line near "FATHER" keyword
-    const fatherAttempt = extractFatherNameFromText(combinedText, mrzResult.full_name.value);
-    if (fatherAttempt) {
-      merged.father_name = makeVisualField(fatherAttempt, "Father's Name (inferred)", 60, { x: 5, y: 45, width: 50, height: 10 });
-    }
-  }
-
-  // Issue date — not in MRZ, from bio page visual text
-  if (visual.issueDate) {
-    const iso = normalizeVisualDate(visual.issueDate);
-    merged.issue_date = makeVisualField(iso, 'Issue Date', 80, { x: 5, y: 55, width: 25, height: 10 });
-  }
-
-  // Place of issue
-  if (visual.placeOfIssue) {
-    merged.place_of_issue = makeVisualField(visual.placeOfIssue, 'Place of Issue', 75, { x: 30, y: 55, width: 30, height: 10 });
-  }
-
-  // Place of birth
-  if (visual.placeOfBirth) {
-    merged.place_of_birth = makeVisualField(visual.placeOfBirth, 'Place of Birth', 75, { x: 5, y: 60, width: 30, height: 10 });
-  }
-
-  // Recalculate overall confidence (MRZ checksummed fields only)
-  const mandatoryScores = [
-    merged.passport_number.score,
-    merged.date_of_birth.score,
-    merged.expiry_date.score,
-  ];
-  merged.overallConfidenceScore = Math.min(...mandatoryScores);
-  merged.overallConfidenceTier = getConfidenceTier(merged.overallConfidenceScore);
-
-  return merged;
+function emptyField(): ExtractedField {
+  return { value: '', confidence: 'LOW', isAuthoritative: false };
 }
 
 /**
- * Attempts to extract father's name from raw OCR text using heuristics specific
- * to Indian passports. The observation page lists:
- *   Father's Name / FATHER'S NAME: <name>
- *   or a full-caps name block near the "EMIGRATION CHECK" section.
+ * Main OCR & Scanning Pipeline Entry Point
+ * GUARANTEE: Never throws an unhandled error — file upload will always succeed 100%!
  */
-function extractFatherNameFromText(text: string, holderName: string): string {
-  const upper = text.toUpperCase();
-  const lines = upper.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+export async function processDocumentScan(
+  imgElement: HTMLImageElement,
+  documentTypeCode: string = 'PASSPORT'
+): Promise<FullDocumentScanResult> {
+  const isPassport = documentTypeCode.toUpperCase() === 'PASSPORT';
+  const baseCanvas = imageToCanvas(imgElement);
+  const ctx = baseCanvas.getContext('2d');
+  
+  // Step 1: Pre-check Image Quality
+  const qualityCheck = precheckImageQuality(baseCanvas.width, baseCanvas.height, ctx);
 
-  // Strategy 1: "FATHER" keyword on a line, name follows on same or next line
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/FATHER/.test(line)) {
-      // Extract inline name after keyword
-      const inline = line.replace(/FATHER['\u2019S]*\s*(NAME)?[:\s\/]*/i, '').trim();
-      if (inline.length > 4 && /^[A-Z][A-Z\s]+$/.test(inline) && inline !== holderName.toUpperCase()) {
-        return inline;
-      }
-      // Next line may have the name
-      const nextLine = (lines[i + 1] || '').trim();
-      if (nextLine.length > 4 && /^[A-Z][A-Z\s]+$/.test(nextLine) && nextLine !== holderName.toUpperCase()) {
-        return nextLine;
-      }
-    }
-  }
+  let bestMrzData: ParsedMrzData | null = null;
+  let bestMrzOrientation = 0;
+  let fullRawText = '';
 
-  // Strategy 2: In Indian passports, after "SATRA BANU..." or "MOTHER" line is the father block
-  // The father's name is typically the SECOND full-caps name block on the observation page
-  // that is different from the holder's own name
-  const holderParts = holderName.toUpperCase().split(/\s+/).filter(Boolean);
-  const nameBlockLines = lines.filter((l) => /^[A-Z]{3,}(\s[A-Z]{3,})+$/.test(l));
+  try {
+    const orientations = [0, 270, 90, 180];
 
-  for (const nameLine of nameBlockLines) {
-    const isHolder = holderParts.every((part) => nameLine.includes(part));
-    if (!isHolder && nameLine.length > 8) {
-      return nameLine;
-    }
-  }
+    if (isPassport) {
+      // Step 2: Passport MRZ Extraction (Scanning Orientations 0°, 270°, 90°, 180°)
+      for (const deg of orientations) {
+        const rotated = rotateCanvas(baseCanvas, deg);
+        const enhanced = enhanceCanvasForOcr(rotated);
+        const ocrText = await recognizeCanvasText(enhanced);
 
-  return '';
-}
+        if (deg === 0) fullRawText = ocrText;
 
-export async function processPassportScan(
-  imageSource: HTMLImageElement | HTMLCanvasElement,
-  userRequestedAngle: number = 0
-): Promise<OcrExtractionResult> {
-  // Test rotation angles starting from requested, then 0, 90, 270, 180
-  const rotationAngles = Array.from(new Set([userRequestedAngle, 0, 90, 270, 180]));
-
-  let bestResult: OcrExtractionResult | null = null;
-  let bestMrz: ParsedPassportMrz | null = null;
-  let bestAngle = userRequestedAngle;
-
-  for (const angle of rotationAngles) {
-    const preprocessed = preprocessImageForOcr(imageSource, { enhanceContrast: true, rotateAngle: angle });
-
-    // Run OCR on MRZ crop + full image
-    const fullOcr: OcrEngineOutput = await runOfflineOcr(preprocessed.dataUrl);
-    let mrzOcr: OcrEngineOutput = {
-      rawText: '', lines: [], engineName: fullOcr.engineName, engineVersion: fullOcr.engineVersion,
-      processedAt: fullOcr.processedAt, averageConfidence: 0,
-    };
-    if (preprocessed.mrzDataUrl) {
-      mrzOcr = await runOfflineOcr(preprocessed.mrzDataUrl);
-    }
-
-    const combinedRawText = `${mrzOcr.rawText}\n${fullOcr.rawText}`.trim();
-    const combinedLines = [...mrzOcr.lines, ...fullOcr.lines];
-
-    // Try MRZ parsing at this rotation
-    let parsedMrz: ParsedPassportMrz | null = null;
-
-    for (let i = 0; i < combinedLines.length - 1; i++) {
-      const l1 = combinedLines[i];
-      const l2 = combinedLines[i + 1];
-
-      if (l1.includes('P<') || l1.startsWith('P')) {
-        const res = parseTd3MrzLines(l1, l2);
-        if (res) {
-          parsedMrz = res;
-          break;
+        const mrzPair = findMrzLinesInText(ocrText);
+        if (mrzPair) {
+          const parsed = parseTd3MrzLines(mrzPair.line1, mrzPair.line2);
+          if (parsed) {
+            bestMrzData = parsed;
+            bestMrzOrientation = deg;
+            // If checksums passed 100%, stop scanning other orientations!
+            if (parsed.checksumsPassed) {
+              break;
+            }
+          }
         }
       }
+    } else {
+      // Non-Passport / Visa document -> Run General OCR at 0° only
+      fullRawText = await recognizeCanvasText(enhanceCanvasForOcr(baseCanvas));
     }
 
-    if (!parsedMrz) {
-      const mrzPair = extractPassportMrzFromText(combinedRawText);
-      if (mrzPair) {
-        parsedMrz = parseTd3MrzLines(mrzPair.line1, mrzPair.line2);
-      }
+    // Also get visual zone OCR text at 270° or 0° for non-MRZ fields (Father's name, place of issue)
+    let visualText = fullRawText;
+    if (bestMrzOrientation !== 0) {
+      const visualCanvas = rotateCanvas(baseCanvas, bestMrzOrientation);
+      visualText = await recognizeCanvasText(visualCanvas);
     }
+    const visualFields = extractVisualZoneFields(visualText || fullRawText);
 
-    // Always extract visual fields to supplement MRZ
-    // Pass the MRZ-derived surname so the visual extractor can:
-    // (a) search for a longer untruncated name containing the surname in visual text
-    // (b) skip the holder's name when detecting the father's name on the observation page
-    const mrzSurname = parsedMrz
-      ? (parsedMrz.full_name.value.split(' ').slice(-1)[0] || '')  // last word = surname
-      : '';
-    const visualFields = extractVisualPassportFields(combinedRawText, mrzSurname);
+    // Step 3: Determine Extraction Mode & Build Result
 
+    if (isPassport && bestMrzData) {
+      const mrz = bestMrzData;
+      const isVerified = mrz.checksumsPassed;
 
-    // If we found a valid MRZ — merge visual fields in and select this as best
-    if (parsedMrz && parsedMrz.mrzValid) {
-      const enriched = mergeMrzWithVisual(parsedMrz, visualFields, combinedRawText);
-      bestMrz = enriched;
-      bestAngle = angle;
-      bestResult = {
-        parsedPassport: enriched,
-        rawText: combinedRawText,
-        diagnosticMetadata: {
-          ocrEngine: fullOcr.engineName,
-          ocrEngineVersion: fullOcr.engineVersion,
-          ocrProcessedAt: fullOcr.processedAt,
-          mrzValidationResult: true,
-          averageConfidenceScore: enriched.overallConfidenceScore,
-          documentClassification: 'Passport',
-          discrepancyCount: 0,
-          detectedRotationAngle: angle,
+      const mode: ExtractionMode = isVerified ? 'MRZ_VERIFIED' : 'MRZ_UNVERIFIED';
+
+      const badge = isVerified
+        ? {
+            label: 'MRZ-Verified (High Confidence)',
+            variant: 'success' as const,
+            description: 'All MRZ Modulo-10 checksums passed 100%. Extracted passport fields are authoritative.',
+          }
+        : {
+            label: 'MRZ-Unverified (Low Confidence — Please Review)',
+            variant: 'warning' as const,
+            description: 'MRZ detected but 1 or more checksum digits failed. Please review fields carefully.',
+          };
+
+      // RULE 1: MRZ AS AUTHORITATIVE SOURCE
+      // When MRZ checksums pass, its values are authoritative and MUST NOT be overwritten by general OCR.
+      // General OCR ONLY fills fields MRZ doesn't cover (father_name, place_of_issue, issue_date).
+      return {
+        extractionMode: mode,
+        confidenceBadge: badge,
+        isPassport: true,
+        qualityCheck,
+        orientationUsed: bestMrzOrientation,
+        mrzData: bestMrzData,
+        rawText: fullRawText || visualText,
+        fields: {
+          full_name: mrz.full_name,
+          father_name: { value: visualFields.fatherName, confidence: 'LOW', isAuthoritative: false },
+          passport_number: mrz.passport_number,
+          date_of_birth: mrz.date_of_birth,
+          gender: mrz.gender,
+          nationality: mrz.nationality,
+          issue_date: { value: visualFields.issueDate, confidence: 'LOW', isAuthoritative: false },
+          expiry_date: mrz.expiry_date,
+          place_of_issue: { value: visualFields.placeOfIssue, confidence: 'LOW', isAuthoritative: false },
         },
-        preprocessedImage: preprocessed,
       };
-      break; // optimal orientation found
     }
 
-    // Partial MRZ or visual-only match
-    if (!bestMrz && (parsedMrz || visualFields.passportNumber)) {
-      const enriched = parsedMrz
-        ? mergeMrzWithVisual(parsedMrz, visualFields, combinedRawText)
-        : null;
-      bestMrz = enriched;
-      bestAngle = angle;
-      bestResult = {
-        parsedPassport: enriched,
-        rawText: combinedRawText,
-        diagnosticMetadata: {
-          ocrEngine: fullOcr.engineName,
-          ocrEngineVersion: fullOcr.engineVersion,
-          ocrProcessedAt: fullOcr.processedAt,
-          mrzValidationResult: false,
-          averageConfidenceScore: enriched?.overallConfidenceScore || 40,
-          documentClassification: 'Passport',
-          discrepancyCount: 0,
-          detectedRotationAngle: angle,
+    // Step 4: Fallback General OCR (MRZ not found or Non-Passport)
+    if (fullRawText && fullRawText.trim().length > 10) {
+      const visualFields = extractVisualZoneFields(fullRawText);
+
+      // Best-effort regex for fallback passport number
+      const passMatch = fullRawText.match(/\b[A-Z][0-9]{7,8}\b/);
+      const dobMatch = fullRawText.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
+
+      return {
+        extractionMode: 'GENERAL_OCR_FALLBACK',
+        confidenceBadge: {
+          label: 'General OCR Fallback',
+          variant: 'info',
+          description: isPassport
+            ? 'No MRZ found. Full text scanned with General OCR. Please review raw text.'
+            : 'Visa / Document text scanned with General OCR. Use raw text for manual reference.',
         },
-        preprocessedImage: preprocessed,
-      };
-    }
-  }
-
-  // Final fallback — no MRZ found at any angle
-  if (!bestResult) {
-    const fallbackPreprocessed = preprocessImageForOcr(imageSource, { enhanceContrast: true, rotateAngle: userRequestedAngle });
-    const fallbackOcr = await runOfflineOcr(fallbackPreprocessed.dataUrl);
-    const fallbackText = fallbackOcr.rawText;
-    const visualFields = extractVisualPassportFields(fallbackText);
-
-    // Build a visual-only result so the user can still see extracted fields
-    let visualOnlyParsed: ParsedPassportMrz | null = null;
-    if (visualFields.fullName || visualFields.passportNumber) {
-      visualOnlyParsed = {
-        full_name: makeVisualField(visualFields.fullName, 'Full Name', 60, { x: 5, y: 15, width: 50, height: 15 }),
-        passport_number: makeVisualField(visualFields.passportNumber, 'Passport Number', 55, { x: 5, y: 70, width: 25, height: 10 }),
-        nationality: makeVisualField('', 'Nationality', 0, { x: 30, y: 35, width: 20, height: 10 }),
-        date_of_birth: makeVisualField(normalizeVisualDate(visualFields.dateOfBirth), 'Date of Birth', 55, { x: 30, y: 70, width: 20, height: 10 }),
-        gender: makeVisualField(visualFields.gender, 'Gender', 60, { x: 50, y: 35, width: 10, height: 10 }),
-        expiry_date: makeVisualField(normalizeVisualDate(visualFields.expiryDate), 'Expiry Date', 55, { x: 55, y: 70, width: 20, height: 10 }),
-        father_name: makeVisualField(visualFields.fatherName, "Father's Name", 55, { x: 5, y: 45, width: 50, height: 10 }),
-        issue_date: makeVisualField(normalizeVisualDate(visualFields.issueDate), 'Issue Date', 55, { x: 5, y: 55, width: 25, height: 10 }),
-        place_of_issue: makeVisualField(visualFields.placeOfIssue, 'Place of Issue', 55, { x: 30, y: 55, width: 30, height: 10 }),
-        place_of_birth: makeVisualField(visualFields.placeOfBirth, 'Place of Birth', 55, { x: 5, y: 60, width: 30, height: 10 }),
-        mrzValid: false,
-        mrzRawLine1: '',
-        mrzRawLine2: '',
-        documentType: 'Passport',
-        overallConfidenceScore: 50,
-        overallConfidenceTier: 'Low',
+        isPassport,
+        qualityCheck,
+        orientationUsed: 0,
+        mrzData: null,
+        rawText: fullRawText,
+        fields: {
+          full_name: emptyField(),
+          father_name: { value: visualFields.fatherName, confidence: 'LOW', isAuthoritative: false },
+          passport_number: { value: passMatch ? passMatch[0] : '', confidence: 'LOW', isAuthoritative: false },
+          date_of_birth: { value: dobMatch ? `${dobMatch[3]}-${dobMatch[2]}-${dobMatch[1]}` : '', confidence: 'LOW', isAuthoritative: false },
+          gender: emptyField(),
+          nationality: emptyField(),
+          issue_date: { value: visualFields.issueDate, confidence: 'LOW', isAuthoritative: false },
+          expiry_date: emptyField(),
+          place_of_issue: { value: visualFields.placeOfIssue, confidence: 'LOW', isAuthoritative: false },
+        },
       };
     }
 
-    bestResult = {
-      parsedPassport: visualOnlyParsed,
-      rawText: fallbackText,
-      diagnosticMetadata: {
-        ocrEngine: fallbackOcr.engineName,
-        ocrEngineVersion: fallbackOcr.engineVersion,
-        ocrProcessedAt: fallbackOcr.processedAt,
-        mrzValidationResult: false,
-        averageConfidenceScore: 0,
-        documentClassification: 'Passport',
-        discrepancyCount: 0,
-        detectedRotationAngle: userRequestedAngle,
+    // Step 5: Manual Entry Only (No text extracted)
+    return {
+      extractionMode: 'MANUAL_ENTRY',
+      confidenceBadge: {
+        label: 'Manual Entry Only',
+        variant: 'secondary',
+        description: 'No text extracted. Document uploaded successfully — enter details manually.',
       },
-      preprocessedImage: fallbackPreprocessed,
+      isPassport,
+      qualityCheck,
+      orientationUsed: 0,
+      mrzData: null,
+      rawText: '',
+      fields: {
+        full_name: emptyField(),
+        father_name: emptyField(),
+        passport_number: emptyField(),
+        date_of_birth: emptyField(),
+        gender: emptyField(),
+        nationality: emptyField(),
+        issue_date: emptyField(),
+        expiry_date: emptyField(),
+        place_of_issue: emptyField(),
+      },
+    };
+  } catch (err) {
+    console.error('OCR pipeline exception caught safely:', err);
+
+    // NON-BLOCKING UPLOAD GUARANTEE: Never fail document upload!
+    return {
+      extractionMode: 'MANUAL_ENTRY',
+      confidenceBadge: {
+        label: 'Manual Entry Only',
+        variant: 'secondary',
+        description: 'OCR process encountered an issue. Document uploaded successfully — enter details manually.',
+      },
+      isPassport,
+      qualityCheck,
+      orientationUsed: 0,
+      mrzData: null,
+      rawText: '',
+      fields: {
+        full_name: emptyField(),
+        father_name: emptyField(),
+        passport_number: emptyField(),
+        date_of_birth: emptyField(),
+        gender: emptyField(),
+        nationality: emptyField(),
+        issue_date: emptyField(),
+        expiry_date: emptyField(),
+        place_of_issue: emptyField(),
+      },
     };
   }
-
-  return bestResult;
-}
-
-export async function processVisaScan(
-  imageSource: HTMLImageElement | HTMLCanvasElement
-): Promise<{ rawText: string; diagnosticMetadata: OcrDiagnosticMetadata }> {
-  const preprocessed = preprocessImageForOcr(imageSource, { enhanceContrast: true });
-  const ocrOutput = await runOfflineOcr(preprocessed.dataUrl);
-
-  return {
-    rawText: ocrOutput.rawText,
-    diagnosticMetadata: {
-      ocrEngine: ocrOutput.engineName,
-      ocrEngineVersion: ocrOutput.engineVersion,
-      ocrProcessedAt: ocrOutput.processedAt,
-      mrzValidationResult: false,
-      averageConfidenceScore: ocrOutput.averageConfidence,
-      documentClassification: 'Visa',
-      discrepancyCount: 0,
-      detectedRotationAngle: 0,
-    },
-  };
 }

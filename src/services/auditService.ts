@@ -1,11 +1,41 @@
 import { getRawDb } from '../db';
 import { AuditLog } from '../db/schema';
 
-export interface AuditParams {
-  entityType: 'Customer' | 'CustomerIdentity' | 'Registration' | 'Payment' | 'Document' | 'DocumentVersion' | 'DocumentType' | 'Season' | 'SeasonType' | 'Package' | 'Settings';
-  entityId: string | number;
+export type AuditEntityType =
+  | 'Customer'
+  | 'CustomerIdentity'
+  | 'Registration'
+  | 'RegistrationCharge'
+  | 'RegistrationTax'
+  | 'Payment'
+  | 'Document'
+  | 'DocumentVersion'
+  | 'DocumentType'
+  | 'DocumentSequence'
+  | 'Season'
+  | 'SeasonType'
+  | 'Package'
+  | 'Settings'
+  | 'CompanySettings'
+  | 'System';
 
-  action: 'Created' | 'Updated' | 'Deleted' | 'Printed' | 'Restored';
+export type AuditAction =
+  | 'Created'
+  | 'Updated'
+  | 'Deleted'
+  | 'Printed'
+  | 'Restored'
+  | 'Activated'
+  | 'Deactivated'
+  | 'StatusChanged'
+  | 'StatusUpdated'
+  | 'DATABASE_RESET'
+  | 'SequenceGenerated';
+
+export interface AuditParams {
+  entityType: AuditEntityType;
+  entityId: string | number;
+  action: AuditAction;
   fieldChanged?: string | null;
   oldValue?: string | null;
   newValue?: string | null;
@@ -41,4 +71,12 @@ export function getAllAuditLogs(limit: number = 100): AuditLog[] {
     SELECT * FROM audit_log ORDER BY log_id DESC LIMIT ?
   `);
   return stmt.all(limit) as unknown as AuditLog[];
+}
+
+export function getAuditLogsForEntity(entityType: AuditEntityType, entityId: string | number, limit: number = 50): AuditLog[] {
+  const db = getRawDb();
+  const stmt = db.prepare(`
+    SELECT * FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY log_id DESC LIMIT ?
+  `);
+  return stmt.all(entityType, String(entityId), limit) as unknown as AuditLog[];
 }

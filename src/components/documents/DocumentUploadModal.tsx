@@ -29,7 +29,7 @@ import {
   checkFileDuplicateHash,
   revealInExplorer,
 } from '../../services/documentService';
-import { getActiveDocumentTypesByScope, DocumentTypeEntity } from '../../services/documentTypeService';
+import { getActiveDocumentTypesByScope, DocumentType } from '../../services/documentTypeService';
 import { DocumentVersion } from '../../db/schema';
 import { DuplicateWarningModal } from './DuplicateWarningModal';
 
@@ -51,7 +51,7 @@ export function DocumentUploadModal({
   registrationNumber,
 }: DocumentUploadModalProps) {
   const [documents, setDocuments] = useState<DocumentWithDetails[]>([]);
-  const [availableTypes, setAvailableTypes] = useState<DocumentTypeEntity[]>([]);
+  const [availableTypes, setAvailableTypes] = useState<DocumentType[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
 
   // Dynamic Metadata Form fields

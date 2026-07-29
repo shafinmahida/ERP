@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FolderOpen, Eye, FileText, FileImage, Tag, Filter, RefreshCw } from 'lucide-react';
+import { Search, FolderOpen, FileText, FileImage, Filter, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/card';
 import { searchAllDocuments, DocumentWithDetails, revealInExplorer } from '../../services/documentService';
-import { getAllDocumentTypes, DocumentTypeEntity } from '../../services/documentTypeService';
+import { getAllDocumentTypes, DocumentType } from '../../services/documentTypeService';
+import { HelpTooltip } from '../common/HelpTooltip';
 
 export function DocumentVaultView() {
   const [query, setQuery] = useState('');
   const [documents, setDocuments] = useState<DocumentWithDetails[]>([]);
-  const [types, setTypes] = useState<DocumentTypeEntity[]>([]);
+  const [types, setTypes] = useState<DocumentType[]>([]);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('ALL');
 
   const handleRefresh = () => {
@@ -31,42 +32,43 @@ export function DocumentVaultView() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <FolderOpen className="h-6 w-6 text-emerald-400" />
+          <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 text-emerald-800" />
             Global Document Vault
+            <HelpTooltip text="Search across all passport scans, visas, and receipts stored in your local data directory." />
           </h2>
-          <p className="text-xs text-slate-400">
-            Searchable directory across all customer identities, registrations, and document categories.
+          <p className="text-xs text-stone-500 mt-0.5">
+            Searchable directory of pilgrim identity documents, passport scans, and visas
           </p>
         </div>
 
-        <Button variant="outline" size="sm" onClick={handleRefresh} className="border-slate-800 text-slate-300">
-          <RefreshCw className="h-4 w-4 mr-1.5" />
-          Refresh
+        <Button variant="outline" size="sm" onClick={handleRefresh} className="text-xs">
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5 text-stone-600" />
+          Refresh Vault
         </Button>
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+      <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-4 rounded-xl border border-stone-200/80 shadow-2xs">
+        <div className="relative flex-1 w-full max-w-md">
+          <Search className="absolute left-3.5 top-3 h-4 w-4 text-stone-400" />
           <Input
-            placeholder="Search by customer name, registration number, filename, or document type..."
+            placeholder="Search by pilgrim name, reg #, filename, or document category..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-9 bg-slate-950 border-slate-800 text-slate-100 text-xs"
+            className="pl-10"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="h-4 w-4 text-amber-400" />
+          <Filter className="h-4 w-4 text-stone-400" />
           <select
             value={selectedTypeFilter}
             onChange={(e) => setSelectedTypeFilter(e.target.value)}
-            className="h-9 rounded-md border border-slate-800 bg-slate-950 px-3 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+            className="h-10 rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-emerald-700/30 cursor-pointer"
           >
             <option value="ALL">All Categories ({documents.length})</option>
             {types.map((t) => (
@@ -78,7 +80,7 @@ export function DocumentVaultView() {
         </div>
       </div>
 
-      {/* Extensible Grid (Future-ready for Pagination / Virtual Scrolling) */}
+      {/* Documents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredDocs.length > 0 ? (
           filteredDocs.map((doc) => {
@@ -89,7 +91,7 @@ export function DocumentVaultView() {
             return (
               <div
                 key={doc.document_id}
-                className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition-all"
+                className="rounded-xl border border-stone-200/80 bg-white p-4 space-y-3 flex flex-col justify-between hover:border-stone-300 transition-all shadow-2xs"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -99,34 +101,34 @@ export function DocumentVaultView() {
 
                   <div className="flex items-center gap-2.5 pt-1">
                     {isImage ? (
-                      <FileImage className="h-5 w-5 text-amber-400 flex-shrink-0" />
+                      <FileImage className="h-5 w-5 text-amber-700 shrink-0" />
                     ) : (
-                      <FileText className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+                      <FileText className="h-5 w-5 text-emerald-800 shrink-0" />
                     )}
-                    <p className="text-xs font-mono text-slate-200 truncate font-semibold">
+                    <p className="text-xs font-mono font-bold text-stone-900 truncate">
                       {ver.original_filename}
                     </p>
                   </div>
 
-                  <div className="text-[11px] text-slate-400 space-y-0.5">
+                  <div className="text-[11px] text-stone-600 space-y-0.5">
                     {doc.customerName && (
                       <p>
-                        Customer: <strong className="text-slate-200">{doc.customerName}</strong>
+                        Pilgrim: <strong className="text-stone-900">{doc.customerName}</strong>
                       </p>
                     )}
                     {doc.registrationNumber && (
                       <p>
-                        Registration: <strong className="text-amber-400">{doc.registrationNumber}</strong>
+                        Reg No: <strong className="text-amber-900 font-mono">{doc.registrationNumber}</strong>
                       </p>
                     )}
-                    <p className="font-mono text-[10px] text-slate-500">
+                    <p className="font-mono text-[10px] text-stone-400">
                       Uploaded: {ver.uploaded_at.slice(0, 10)} • {(ver.file_size / 1024).toFixed(1)} KB
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-slate-500">
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-stone-400">
                     Scope: {doc.ownerScope}
                   </span>
 
@@ -134,18 +136,19 @@ export function DocumentVaultView() {
                     variant="ghost"
                     size="sm"
                     onClick={() => revealInExplorer(ver.relative_path)}
-                    className="h-7 text-xs text-amber-400 hover:text-amber-300"
+                    className="h-7 text-xs text-amber-900 hover:text-amber-950 font-semibold"
                   >
                     <FolderOpen className="h-3.5 w-3.5 mr-1" />
-                    Reveal in Explorer
+                    Open File Path
                   </Button>
                 </div>
               </div>
             );
           })
         ) : (
-          <div className="col-span-full rounded-xl border border-slate-800 bg-slate-950 p-12 text-center text-slate-500">
-            <p className="text-sm font-semibold text-slate-300">No Documents Found Matching Search Criteria</p>
+          <div className="col-span-full rounded-xl border border-stone-200/80 bg-white p-12 text-center text-stone-500 shadow-2xs">
+            <p className="text-sm font-bold text-stone-800">No Documents Found in Vault</p>
+            <p className="text-xs text-stone-500 mt-1">Upload passport scans and visas from Customer Profiles or Registration Workspaces.</p>
           </div>
         )}
       </div>

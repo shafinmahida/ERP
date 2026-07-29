@@ -6,10 +6,13 @@ import './index.css';
 
 // Pre-warm the Tesseract.js singleton worker in the background at startup.
 // This downloads the language pack once so the first passport scan is instant.
-import { runOfflineOcr } from './services/ocr/ocrEngine';
-// Fire-and-forget: warm up with an empty string (returns immediately but initializes worker)
+import { recognizeCanvasText } from './services/ocr/ocrEngine';
+// Fire-and-forget: warm up canvas OCR worker at startup
 setTimeout(() => {
-  runOfflineOcr('').catch(() => { /* silent — just pre-initializing */ });
+  const dummyCanvas = document.createElement('canvas');
+  dummyCanvas.width = 10;
+  dummyCanvas.height = 10;
+  recognizeCanvasText(dummyCanvas).catch(() => { /* silent pre-warm */ });
 }, 2000);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

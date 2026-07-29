@@ -1,0 +1,39 @@
+name: Feature Request
+description: Propose a new feature, operational enhancement, or module for Dayar-E-Habib ERP
+title: "[FEAT]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please explain how the proposed feature aligns with **The Calm ERP Initiative** and **Offline-First Non-Negotiable Constraints**.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Operational Need
+      description: Describe the operational pain point or operator need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Detail how the proposed feature should work.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Target Module
+      options:
+        - Registration Engine
+        - Pilgrim Directory & Passports
+        - Travel Operations (Visa/Flight/Hotel)
+        - Financial Ledger & Invoicing
+        - Document Vault & Print Engine
+        - System Core & Backup Engine
+    validations:
+      required: true
