@@ -342,35 +342,87 @@ export function createRegistrationWithPax(data: {
   const getAddr2 = (p: PaxInputData) => (p.addressLine2 || p.address_line2 || null);
   const getPin = (p: PaxInputData) => (p.pinCode || p.pin_code || null);
 
-  // Process Primary Customer first
-  const primaryPaxData = data.paxList.find((p) => p.is_primary) || data.paxList[0];
-  let primaryCustomerId = primaryPaxData.customer_id;
-
-  if (!primaryCustomerId) {
-    const cRes = db
-      .prepare(
-        `INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, address_line1, address_line2, city, pin_code, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        getName(primaryPaxData),
-        getFather(primaryPaxData),
-        getDob(primaryPaxData),
-        getGender(primaryPaxData),
-        getNat(primaryPaxData),
-        getMob(primaryPaxData),
-        primaryPaxData.state || 'Maharashtra',
-        getAddr1(primaryPaxData),
-        getAddr2(primaryPaxData),
-        primaryPaxData.city || null,
-        getPin(primaryPaxData),
-        primaryPaxData.email || null,
+  // 1. Process and normalize all PAX customer records first
+  const normalizedPaxList = data.paxList.map((pax) => {
+    let custId = pax.customer_id;
+    if (!custId) {
+      const cRes = db
+        .prepare(
+          `INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, address_line1, address_line2, city, pin_code, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          getName(pax),
+          getFather(pax),
+          getDob(pax),
+          getGender(pax),
+          getNat(pax),
+          getMob(pax),
+          pax.state || 'Maharashtra',
+          getAddr1(pax),
+          getAddr2(pax),
+          pax.city || null,
+          getPin(pax),
+          pax.email || null,
+          now,
+          now
+        );
+      custId = Number(cRes.lastInsertRowid);
+    } else {
+      db.prepare(
+        `UPDATE customer SET full_name = ?, father_name = ?, date_of_birth = ?, gender = ?, nationality = ?, mobile_number = ?, state = ?, address_line1 = ?, address_line2 = ?, city = ?, pin_code = ?, email = ?, updated_at = ? WHERE customer_id = ?`
+      ).run(
+        getName(pax),
+        getFather(pax),
+        getDob(pax),
+        getGender(pax),
+        getNat(pax),
+        getMob(pax),
+        pax.state || 'Maharashtra',
+        getAddr1(pax),
+        getAddr2(pax),
+        pax.city || null,
+        getPin(pax),
+        pax.email || null,
         now,
-        now
+        custId
       );
-    primaryCustomerId = Number(cRes.lastInsertRowid);
-  }
+    }
 
-  // Insert Registration Master Record
+    const passNum = getPass(pax);
+    if (passNum !== '') {
+      const existingIdent = db
+        .prepare(`SELECT identity_id FROM customer_identity WHERE customer_id = ? AND passport_number = ?`)
+        .get(custId, passNum);
+
+      if (!existingIdent) {
+        db.prepare(
+          `INSERT INTO customer_identity (customer_id, passport_number, issue_date, expiry_date, place_of_issue, identity_status, created_at) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`
+        ).run(
+          custId,
+          passNum,
+          getIss(pax),
+          getExp(pax),
+          getPlace(pax),
+          now
+        );
+      } else {
+        db.prepare(
+          `UPDATE customer_identity SET issue_date = ?, expiry_date = ?, place_of_issue = ? WHERE identity_id = ?`
+        ).run(getIss(pax), getExp(pax), getPlace(pax), (existingIdent as any).identity_id);
+      }
+    }
+
+    return {
+      ...pax,
+      customer_id: custId,
+    };
+  });
+
+  // 2. Identify Primary Customer ID
+  const primaryPaxObj = normalizedPaxList.find((p) => p.is_primary) || normalizedPaxList[0];
+  const primaryCustomerId = primaryPaxObj.customer_id!;
+
+  // 3. Insert Registration Master Record
   const regRes = db
     .prepare(
       `INSERT INTO registration (
@@ -422,84 +474,16 @@ export function createRegistrationWithPax(data: {
 
   const regId = Number(regRes.lastInsertRowid);
 
+  // 4. Insert all PAX rows into registration_pax
   const insertPaxStmt = db.prepare(`
     INSERT INTO registration_pax (registration_id, customer_id, is_primary, pax_sequence, relationship, room_preference, bus_assignment, pax_status, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
   `);
 
-  data.paxList.forEach((pax, idx) => {
-    let custId = pax.customer_id;
-    if (!custId) {
-      const cRes = db
-        .prepare(
-          `INSERT INTO customer (full_name, father_name, date_of_birth, gender, nationality, mobile_number, state, address_line1, address_line2, city, pin_code, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          getName(pax),
-          getFather(pax),
-          getDob(pax),
-          getGender(pax),
-          getNat(pax),
-          getMob(pax),
-          pax.state || 'Maharashtra',
-          getAddr1(pax),
-          getAddr2(pax),
-          pax.city || null,
-          getPin(pax),
-          pax.email || null,
-          now,
-          now
-        );
-      custId = Number(cRes.lastInsertRowid);
-    } else {
-      // Update customer master demographic fields if customer_id is supplied
-      db.prepare(
-        `UPDATE customer SET full_name = ?, father_name = ?, date_of_birth = ?, gender = ?, nationality = ?, mobile_number = ?, state = ?, address_line1 = ?, address_line2 = ?, city = ?, pin_code = ?, email = ?, updated_at = ? WHERE customer_id = ?`
-      ).run(
-        getName(pax),
-        getFather(pax),
-        getDob(pax),
-        getGender(pax),
-        getNat(pax),
-        getMob(pax),
-        pax.state || 'Maharashtra',
-        getAddr1(pax),
-        getAddr2(pax),
-        pax.city || null,
-        getPin(pax),
-        pax.email || null,
-        now,
-        custId
-      );
-    }
-
-    const passNum = getPass(pax);
-    if (passNum !== '') {
-      const existingIdent = db
-        .prepare(`SELECT identity_id FROM customer_identity WHERE customer_id = ? AND passport_number = ?`)
-        .get(custId, passNum);
-
-      if (!existingIdent) {
-        db.prepare(
-          `INSERT INTO customer_identity (customer_id, passport_number, issue_date, expiry_date, place_of_issue, identity_status, created_at) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`
-        ).run(
-          custId,
-          passNum,
-          getIss(pax),
-          getExp(pax),
-          getPlace(pax),
-          now
-        );
-      } else {
-        db.prepare(
-          `UPDATE customer_identity SET issue_date = ?, expiry_date = ?, place_of_issue = ? WHERE identity_id = ?`
-        ).run(getIss(pax), getExp(pax), getPlace(pax), (existingIdent as any).identity_id);
-      }
-    }
-
+  normalizedPaxList.forEach((pax, idx) => {
     insertPaxStmt.run(
       regId,
-      custId,
+      pax.customer_id,
       pax.is_primary ? 1 : 0,
       idx + 1,
       pax.relationship || (pax.is_primary ? 'Primary' : 'Relative'),
@@ -517,7 +501,7 @@ export function createRegistrationWithPax(data: {
     entityId: regId,
     action: 'Created',
     newValue: JSON.stringify(created),
-    notes: `Registration ${regNum} created with ${data.paxList.length} Pax`,
+    notes: `Registration ${regNum} created with ${normalizedPaxList.length} Pax`,
   });
 
   return created;

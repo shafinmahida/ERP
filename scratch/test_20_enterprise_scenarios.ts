@@ -127,8 +127,11 @@ let reg2 = createRegistrationWithPax({
   ],
 });
 
-if (reg2.paxCount !== 3) throw new Error('Scenario 2 Failed: PAX count mismatch.');
-console.log(`✓ Scenario 2: Mixed registration created with 1 existing + 2 new customers (PAX Count: 3).`);
+const reg2Fresh = getRegistrationWithDetails(reg2.registration_id)!;
+if (reg2Fresh.paxCount !== 3) {
+  throw new Error(`Scenario 2 Failed: Expected 3, got ${reg2Fresh.paxCount}`);
+}
+console.log(`✓ Scenario 2: Mixed registration created with 1 existing + 2 new customers (PAX Count: ${reg2Fresh.paxCount}).`);
 passedCount++;
 
 // -----------------------------------------------------------------------------
