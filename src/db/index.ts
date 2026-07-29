@@ -199,61 +199,63 @@ class WebStorageDiskStore {
       this.autoIds['package'] = 4;
     }
 
-    const demoCusts = [
-      ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
-      ['Rashid Ahmed Khan', 'Ahmed Noor Khan', '1985-06-15', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876541', '2022-03-01', '2032-02-28', 'Mumbai'],
-      ['Fatima Rashid Khan', 'Rashid Ahmed Khan', '1990-08-20', 'Female', 'Indian', '+919820011224', 'Maharashtra', 'Z9876542', '2022-03-01', '2032-02-28', 'Mumbai'],
-      ['Yusuf Rashid Khan', 'Rashid Ahmed Khan', '2015-11-10', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876543', '2023-01-15', '2028-01-14', 'Mumbai'],
-      ['Amina Rashid Khan', 'Rashid Ahmed Khan', '2018-02-05', 'Female', 'Indian', '+919820011223', 'Maharashtra', 'Z9876544', '2023-01-15', '2028-01-14', 'Mumbai'],
-      ['Zainab Qasim Merchant', 'Qasim Merchant', '1988-12-12', 'Female', 'Indian', '+919666555444', 'Gujarat', 'P1900001', '2021-05-20', '2031-05-19', 'Ahmedabad'],
-      ['Ibrahim Qasim Merchant', 'Qasim Merchant', '1982-04-18', 'Male', 'Indian', '+919666555445', 'Gujarat', 'P1900002', '2021-05-20', '2031-05-19', 'Ahmedabad'],
-      ['Bilal Suhail Khan', 'Suhail Khan', '1992-09-09', 'Male', 'Indian', '+919811122233', 'Delhi', 'P1500001', '2020-10-10', '2030-10-09', 'Delhi'],
-      ['Tariq Mahmood Shaikh', 'Mahmood Shaikh', '1979-01-25', 'Male', 'Indian', '+919700088899', 'Karnataka', 'K8877112', '2019-07-04', '2029-07-03', 'Bangalore'],
-      ['Sana Tariq Shaikh', 'Tariq Mahmood Shaikh', '1984-03-30', 'Female', 'Indian', '+919700088899', 'Karnataka', 'K8877113', '2019-07-04', '2029-07-03', 'Bangalore'],
-      ['Omar Farooq Al-Siddīqī', 'Farooq Al-Siddīqī', '1975-05-05', 'Male', 'Indian', '+919444455555', 'Telangana', 'T5544332', '2023-08-12', '2033-08-11', 'Hyderabad'],
-      ['Khadija Omar Al-Siddīqī', 'Omar Al-Siddīqī', '1978-07-14', 'Female', 'Indian', '+919444455555', 'Telangana', 'T5544333', '2023-08-12', '2033-08-11', 'Hyderabad'],
-      ['Usman Ali Ansari', 'Ali Ansari', '1995-11-22', 'Male', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122334', '2024-02-01', '2034-01-31', 'Lucknow'],
-      ['Hafsa Usman Ansari', 'Usman Ali Ansari', '1997-02-14', 'Female', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122335', '2024-02-01', '2034-01-31', 'Lucknow'],
-      ['Hamza Zubair Sayyed', 'Zubair Sayyed', '1987-10-10', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344556', '2021-11-11', '2031-11-10', 'Pune'],
-      ['Mariam Hamza Sayyed', 'Hamza Zubair Sayyed', '1991-04-04', 'Female', 'Indian', '+919333344444', 'Maharashtra', 'M3344557', '2021-11-11', '2031-11-10', 'Pune'],
-      ['Zayd Hamza Sayyed', 'Hamza Zubair Sayyed', '2016-06-06', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344558', '2022-06-06', '2027-06-05', 'Pune'],
-      ['Suhail Akram Choudhury', 'Akram Choudhury', '1980-08-08', 'Male', 'Indian', '+919555566666', 'West Bengal', 'W5566778', '2020-05-05', '2030-05-04', 'Kolkata'],
-      ['Nabila Suhail Choudhury', 'Suhail Choudhury', '1983-09-09', 'Female', 'Indian', '+919555566666', 'West Bengal', 'W5566779', '2020-05-05', '2030-05-04', 'Kolkata'],
-      ['Zubair Hassan Patel', 'Hassan Patel', '1991-01-01', 'Male', 'Indian', '+919777788888', 'Gujarat', 'G7788990', '2024-03-15', '2034-03-14', 'Surat'],
-    ];
+    if (!this.tables['customer'] || this.tables['customer'].length === 0) {
+      const demoCusts = [
+        ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
+        ['Rashid Ahmed Khan', 'Ahmed Noor Khan', '1985-06-15', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876541', '2022-03-01', '2032-02-28', 'Mumbai'],
+        ['Fatima Rashid Khan', 'Rashid Ahmed Khan', '1990-08-20', 'Female', 'Indian', '+919820011224', 'Maharashtra', 'Z9876542', '2022-03-01', '2032-02-28', 'Mumbai'],
+        ['Yusuf Rashid Khan', 'Rashid Ahmed Khan', '2015-11-10', 'Male', 'Indian', '+919820011223', 'Maharashtra', 'Z9876543', '2023-01-15', '2028-01-14', 'Mumbai'],
+        ['Amina Rashid Khan', 'Rashid Ahmed Khan', '2018-02-05', 'Female', 'Indian', '+919820011223', 'Maharashtra', 'Z9876544', '2023-01-15', '2028-01-14', 'Mumbai'],
+        ['Zainab Qasim Merchant', 'Qasim Merchant', '1988-12-12', 'Female', 'Indian', '+919666555444', 'Gujarat', 'P1900001', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+        ['Ibrahim Qasim Merchant', 'Qasim Merchant', '1982-04-18', 'Male', 'Indian', '+919666555445', 'Gujarat', 'P1900002', '2021-05-20', '2031-05-19', 'Ahmedabad'],
+        ['Bilal Suhail Khan', 'Suhail Khan', '1992-09-09', 'Male', 'Indian', '+919811122233', 'Delhi', 'P1500001', '2020-10-10', '2030-10-09', 'Delhi'],
+        ['Tariq Mahmood Shaikh', 'Mahmood Shaikh', '1979-01-25', 'Male', 'Indian', '+919700088899', 'Karnataka', 'K8877112', '2019-07-04', '2029-07-03', 'Bangalore'],
+        ['Sana Tariq Shaikh', 'Tariq Mahmood Shaikh', '1984-03-30', 'Female', 'Indian', '+919700088899', 'Karnataka', 'K8877113', '2019-07-04', '2029-07-03', 'Bangalore'],
+        ['Omar Farooq Al-Siddīqī', 'Farooq Al-Siddīqī', '1975-05-05', 'Male', 'Indian', '+919444455555', 'Telangana', 'T5544332', '2023-08-12', '2033-08-11', 'Hyderabad'],
+        ['Khadija Omar Al-Siddīqī', 'Omar Al-Siddīqī', '1978-07-14', 'Female', 'Indian', '+919444455555', 'Telangana', 'T5544333', '2023-08-12', '2033-08-11', 'Hyderabad'],
+        ['Usman Ali Ansari', 'Ali Ansari', '1995-11-22', 'Male', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122334', '2024-02-01', '2034-01-31', 'Lucknow'],
+        ['Hafsa Usman Ansari', 'Usman Ali Ansari', '1997-02-14', 'Female', 'Indian', '+919111122222', 'Uttar Pradesh', 'U1122335', '2024-02-01', '2034-01-31', 'Lucknow'],
+        ['Hamza Zubair Sayyed', 'Zubair Sayyed', '1987-10-10', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344556', '2021-11-11', '2031-11-10', 'Pune'],
+        ['Mariam Hamza Sayyed', 'Hamza Zubair Sayyed', '1991-04-04', 'Female', 'Indian', '+919333344444', 'Maharashtra', 'M3344557', '2021-11-11', '2031-11-10', 'Pune'],
+        ['Zayd Hamza Sayyed', 'Hamza Zubair Sayyed', '2016-06-06', 'Male', 'Indian', '+919333344444', 'Maharashtra', 'M3344558', '2022-06-06', '2027-06-05', 'Pune'],
+        ['Suhail Akram Choudhury', 'Akram Choudhury', '1980-08-08', 'Male', 'Indian', '+919555566666', 'West Bengal', 'W5566778', '2020-05-05', '2030-05-04', 'Kolkata'],
+        ['Nabila Suhail Choudhury', 'Suhail Choudhury', '1983-09-09', 'Female', 'Indian', '+919555566666', 'West Bengal', 'W5566779', '2020-05-05', '2030-05-04', 'Kolkata'],
+        ['Zubair Hassan Patel', 'Hassan Patel', '1991-01-01', 'Male', 'Indian', '+919777788888', 'Gujarat', 'G7788990', '2024-03-15', '2034-03-14', 'Surat'],
+      ];
 
-    this.tables['customer'] = [];
-    this.tables['customer_identity'] = [];
+      this.tables['customer'] = [];
+      this.tables['customer_identity'] = [];
 
-    demoCusts.forEach((c, idx) => {
-      const cId = idx + 1;
-      this.tables['customer'].push({
-        customer_id: cId,
-        full_name: c[0],
-        father_name: c[1],
-        date_of_birth: c[2],
-        gender: c[3],
-        nationality: c[4],
-        mobile_number: c[5],
-        state: c[6],
-        created_at: now,
-        updated_at: now,
+      demoCusts.forEach((c, idx) => {
+        const cId = idx + 1;
+        this.tables['customer'].push({
+          customer_id: cId,
+          full_name: c[0],
+          father_name: c[1],
+          date_of_birth: c[2],
+          gender: c[3],
+          nationality: c[4],
+          mobile_number: c[5],
+          state: c[6],
+          created_at: now,
+          updated_at: now,
+        });
+
+        this.tables['customer_identity'].push({
+          identity_id: idx + 1,
+          customer_id: cId,
+          passport_number: c[7],
+          issue_date: c[8],
+          expiry_date: c[9],
+          place_of_issue: c[10],
+          identity_status: 'ACTIVE',
+          created_at: now,
+        });
       });
 
-      this.tables['customer_identity'].push({
-        identity_id: idx + 1,
-        customer_id: cId,
-        passport_number: c[7],
-        issue_date: c[8],
-        expiry_date: c[9],
-        place_of_issue: c[10],
-        identity_status: 'ACTIVE',
-        created_at: now,
-      });
-    });
-
-    this.autoIds['customer'] = demoCusts.length;
-    this.autoIds['customer_identity'] = demoCusts.length;
+      this.autoIds['customer'] = demoCusts.length;
+      this.autoIds['customer_identity'] = demoCusts.length;
+    }
 
     if (!this.tables['customer_identity'] || this.tables['customer_identity'].length === 0) {
       const demoPassports = ['Q123456', 'Z9876541', 'Z9876542', 'Z9876543', 'Z9876544', 'P1900001', 'P1900002', 'P1500001', 'K8877112', 'K8877113', 'T5544332', 'T5544333', 'U1122334', 'U1122335', 'M3344556', 'M3344557', 'M3344558', 'W5566778', 'W5566779', 'G7788990'];
