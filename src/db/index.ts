@@ -897,7 +897,8 @@ function initDdl(db: any) {
     CREATE TABLE IF NOT EXISTS payment (
       payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
       registration_id INTEGER NOT NULL,
-      amount_paise INTEGER NOT NULL,
+      amount REAL,
+      amount_paise INTEGER NOT NULL DEFAULT 0,
       payment_type TEXT NOT NULL,
       cheque_number TEXT,
       bank_name TEXT,
@@ -1182,6 +1183,10 @@ function initDdl(db: any) {
 
   // Migration 4: Add base_price_paise to package if missing
   try { db.exec(`ALTER TABLE package ADD COLUMN base_price_paise INTEGER DEFAULT 0;`); } catch {}
+
+  // Migration 7: Ensure amount and amount_paise columns exist on payment table for full backward/forward compatibility
+  try { db.exec(`ALTER TABLE payment ADD COLUMN amount REAL;`); } catch {}
+  try { db.exec(`ALTER TABLE payment ADD COLUMN amount_paise INTEGER NOT NULL DEFAULT 0;`); } catch {}
 
   // Migration 5: Add immutability snapshots & operational columns to registration if missing
   try { db.exec(`ALTER TABLE registration ADD COLUMN package_name_snapshot TEXT;`); } catch {}
