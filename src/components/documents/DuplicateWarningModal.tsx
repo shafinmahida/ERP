@@ -36,7 +36,7 @@ export function DuplicateWarningModal({
             </DialogTitle>
           </div>
           <p className="text-xs text-slate-400">
-            An identical file byte-for-byte matching checksum <code className="font-mono text-amber-300 text-[11px]">{existingVersion?.checksum.slice(0, 16)}...</code> already exists in the system.
+            An identical file byte-for-byte matching checksum <code className="font-mono text-amber-300 text-[11px]">{existingVersion?.checksum?.slice(0, 16)}...</code> already exists in the system.
           </p>
         </DialogHeader>
 
@@ -50,7 +50,7 @@ export function DuplicateWarningModal({
               Original Filename: <strong className="text-slate-200">{existingVersion.original_filename}</strong>
             </p>
             <p className="text-slate-400">
-              Uploaded On: <span className="font-mono text-slate-300">{existingVersion.uploaded_at.slice(0, 19).replace('T', ' ')}</span>
+              Uploaded On: <span className="font-mono text-slate-300">{existingVersion?.uploaded_at?.slice(0, 19).replace('T', ' ') || '-'}</span>
             </p>
             {existingDocument.customerName && (
               <p className="text-slate-400">

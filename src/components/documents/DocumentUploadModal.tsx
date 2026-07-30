@@ -376,7 +376,7 @@ export function DocumentUploadModal({
                             </p>
                             <p className="text-[11px] text-slate-400">
                               {(currentVer.file_size / 1024).toFixed(1)} KB • {currentVer.mime_type} • Uploaded:{' '}
-                              {currentVer.uploaded_at.slice(0, 10)}
+                              {currentVer.uploaded_at?.slice(0, 10) || '-'}
                             </p>
                           </div>
                         </div>
@@ -484,7 +484,7 @@ export function DocumentUploadModal({
                               <div>
                                 <span className="font-bold text-amber-300">v{ver.version_number}</span> —{' '}
                                 <span className="text-slate-300">{ver.original_filename}</span>{' '}
-                                <span className="text-slate-500">({ver.uploaded_at.slice(0, 10)})</span>
+                                <span className="text-slate-500">({ver.uploaded_at?.slice(0, 10) || '-'})</span>
                                 {ver.reason_for_replacement && (
                                   <p className="text-[10px] text-slate-400 font-sans italic">
                                     Reason: {ver.reason_for_replacement}

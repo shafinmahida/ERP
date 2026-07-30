@@ -482,7 +482,7 @@ export function SettingsScreen() {
                     >
                       <div>
                         <p className="font-mono font-bold text-amber-900">{b.filename}</p>
-                        <p className="text-[10px] text-stone-500 mt-0.5">{b.createdAt.slice(0, 19).replace('T', ' ')}</p>
+                        <p className="text-[10px] text-stone-500 mt-0.5">{b.createdAt?.slice(0, 19).replace('T', ' ') || '-'}</p>
                       </div>
                       <span className="font-mono text-[10px] text-stone-600 bg-white px-2 py-0.5 rounded border border-stone-200">
                         {(b.sizeBytes / 1024).toFixed(1)} KB
@@ -533,7 +533,7 @@ export function SettingsScreen() {
                     </td>
                     <td className="px-3 py-2 text-stone-700 max-w-md truncate font-sans">{log.notes || '-'}</td>
                     <td className="px-3 py-2 text-stone-500 text-[11px]">
-                      {log.timestamp.slice(0, 19).replace('T', ' ')}
+                      {log.timestamp?.slice(0, 19).replace('T', ' ') || '-'}
                     </td>
                   </tr>
                 ))}

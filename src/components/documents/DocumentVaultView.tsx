@@ -122,7 +122,7 @@ export function DocumentVaultView() {
                       </p>
                     )}
                     <p className="font-mono text-[10px] text-stone-400">
-                      Uploaded: {ver.uploaded_at.slice(0, 10)} • {(ver.file_size / 1024).toFixed(1)} KB
+                      Uploaded: {ver.uploaded_at?.slice(0, 10) || '-'} • {(ver.file_size / 1024).toFixed(1)} KB
                     </p>
                   </div>
                 </div>
