@@ -27,6 +27,7 @@ import {
 import { getAllSeasons, SeasonWithDetails } from './services/seasonPackageService';
 import { createBackup } from './services/backupService';
 import { runFullStartupDiagnostic } from './services/startupService';
+import { resetDatabaseToEmpty } from './db';
 
 import { ExecutiveDashboardHome } from './components/dashboard/ExecutiveDashboardHome';
 import { TravelOperationsView } from './components/operations/TravelOperationsView';
@@ -102,6 +103,12 @@ export function App() {
   };
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && (window.location.search.includes('clean=true') || window.location.search.includes('wipe=true'))) {
+      resetDatabaseToEmpty();
+      window.history.replaceState({}, '', window.location.pathname);
+      window.location.reload();
+      return;
+    }
     runFullStartupDiagnostic();
     reloadData();
   }, []);

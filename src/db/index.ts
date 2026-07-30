@@ -139,6 +139,29 @@ class WebStorageDiskStore {
     this.load();
   }
 
+  public clearAllData() {
+    const now = new Date().toISOString();
+    this.tables = {
+      season_type: this.tables['season_type'] || [],
+      season: this.tables['season'] || [],
+      package: this.tables['package'] || [],
+      document_type: this.tables['document_type'] || [],
+      company_settings: [{ setting_key: 'demo_seed_disabled', setting_value: 'true', updated_at: now }],
+      customer: [],
+      customer_identity: [],
+      registration: [],
+      registration_pax: [],
+      registration_charge: [],
+      registration_tax: [],
+      payment: [],
+      document: [],
+      document_version: [],
+      document_sequence: []
+    };
+    this.autoIds = {};
+    this.save();
+  }
+
   private load() {
     try {
       let content: string | null = null;
@@ -1286,21 +1309,24 @@ export function resetDatabaseToEmpty(): void {
   const db = getRawDb();
   const now = new Date().toISOString();
 
-  db.exec(`
-    DELETE FROM payment;
-    DELETE FROM registration_tax;
-    DELETE FROM registration_charge;
-    DELETE FROM registration_pax;
-    DELETE FROM registration;
-    DELETE FROM document_version;
-    DELETE FROM document;
-    DELETE FROM customer_identity;
-    DELETE FROM customer;
-    DELETE FROM document_sequence;
-  `);
+  if (db && typeof (db as any).clearAllData === 'function') {
+    (db as any).clearAllData();
+  }
 
-  // Insert or update demo_seed_disabled flag so demo records do NOT re-populate
   try {
+    db.exec(`
+      DELETE FROM payment;
+      DELETE FROM registration_tax;
+      DELETE FROM registration_charge;
+      DELETE FROM registration_pax;
+      DELETE FROM registration;
+      DELETE FROM document_version;
+      DELETE FROM document;
+      DELETE FROM customer_identity;
+      DELETE FROM customer;
+      DELETE FROM document_sequence;
+    `);
+
     db.prepare(`
       INSERT INTO company_settings (setting_key, setting_value, updated_at)
       VALUES ('demo_seed_disabled', 'true', ?)
@@ -1311,7 +1337,22 @@ export function resetDatabaseToEmpty(): void {
   // If in WebStorage browser mode, clear local storage key as well
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.removeItem('dayar_e_habib_db');
+      localStorage.setItem('dayar_e_habib_db', JSON.stringify({
+        tables: {
+          company_settings: [{ setting_key: 'demo_seed_disabled', setting_value: 'true', updated_at: now }],
+          customer: [],
+          customer_identity: [],
+          registration: [],
+          registration_pax: [],
+          registration_charge: [],
+          registration_tax: [],
+          payment: [],
+          document: [],
+          document_version: [],
+          document_sequence: []
+        },
+        autoIds: {}
+      }));
     } catch {}
   }
 
