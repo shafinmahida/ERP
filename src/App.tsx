@@ -87,15 +87,37 @@ export function App() {
     }
   };
 
+  const handleWipeDatabase = () => {
+    if (window.confirm('Are you sure you want to permanently wipe all client data and registrations? This cannot be undone.')) {
+      resetDatabaseToEmpty();
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.clear();
+      }
+      addToast('All client profiles and registrations have been completely erased.', 'info');
+      reloadData();
+    }
+  };
+
   const reloadData = () => {
     try {
-      const custs = getAllCustomers();
+      let custs = getAllCustomers();
+
+      // Auto-purge demo customers if demo data is detected
+      const isDemoPresent = custs.some((c) => c.full_name === 'Shafin Suleman Mahida' || c.full_name === 'Rashid Ahmed Khan');
+      if (isDemoPresent) {
+        resetDatabaseToEmpty();
+        custs = getAllCustomers();
+      }
+
       setCustomers(custs);
 
       const sList = getAllSeasons();
       setSeasons(sList);
 
-      const regs = getAllRegistrations();
+      let regs = getAllRegistrations();
+      if (isDemoPresent) {
+        regs = [];
+      }
       setRegistrations(regs);
     } catch (e) {
       console.error('Failed to load database content:', e);
@@ -217,6 +239,7 @@ export function App() {
       onQuickBackup={handleQuickBackup}
       onToggleGuide={handleToggleGuide}
       showGuide={showGuide}
+      onWipeDatabase={handleWipeDatabase}
     >
       {activeTab === 'home' && (
         <ExecutiveDashboardHome

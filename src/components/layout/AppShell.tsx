@@ -15,6 +15,7 @@ import {
   Calendar,
   Sparkles,
   HelpCircle,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/card';
@@ -32,6 +33,7 @@ interface AppShellProps {
   onQuickBackup: () => void;
   onToggleGuide: () => void;
   showGuide: boolean;
+  onWipeDatabase?: () => void;
 }
 
 export function AppShell({
@@ -44,6 +46,7 @@ export function AppShell({
   onQuickBackup,
   onToggleGuide,
   showGuide,
+  onWipeDatabase,
 }: AppShellProps) {
   const [seasons, setSeasons] = useState<SeasonWithDetails[]>([]);
   const [activeSeason, setActiveSeason] = useState<SeasonWithDetails | null>(null);
@@ -234,6 +237,19 @@ export function AppShell({
 
           {/* Header Action Buttons — Single Gold Action, Discrete Help Button */}
           <div className="flex items-center gap-3">
+            {onWipeDatabase && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onWipeDatabase}
+                className="text-xs border-red-200 text-red-700 bg-red-50 hover:bg-red-100 hover:border-red-300 font-semibold"
+                title="Wipe all client records and registrations clean"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1 text-red-600" />
+                Wipe Client Data
+              </Button>
+            )}
+
             <Button
               variant="outline"
               size="sm"
