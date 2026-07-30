@@ -1068,8 +1068,16 @@ function initDdl(db: any) {
       `);
     }
 
+    let isSeedDisabled = false;
+    try {
+      const opt = db.prepare(`SELECT setting_value FROM company_settings WHERE setting_key = 'demo_seed_disabled'`).get();
+      if (opt && (opt as any).setting_value === 'true') {
+        isSeedDisabled = true;
+      }
+    } catch {}
+
     const existingCust = db.prepare(`SELECT * FROM customer`).all();
-    if (!existingCust || existingCust.length < 20) {
+    if (!isSeedDisabled && (!existingCust || existingCust.length < 20)) {
       const now = new Date().toISOString();
       const demoCusts = [
         ['Shafin Suleman Mahida', 'Suleman Yusuf Mahida', '2006-04-11', 'Male', 'Indian', '+917016490230', 'Maharashtra', 'Q123456', '2024-01-10', '2034-01-09', 'Mumbai'],
@@ -1112,7 +1120,7 @@ function initDdl(db: any) {
     }
 
     const existingReg = db.prepare(`SELECT * FROM registration`).all();
-    if (!existingReg || existingReg.length < 3) {
+    if (!isSeedDisabled && (!existingReg || existingReg.length < 3)) {
       const now = new Date().toISOString();
       const r1Exists = db.prepare(`SELECT registration_id FROM registration WHERE registration_id = 1`).get();
       if (!r1Exists) {
@@ -1287,11 +1295,27 @@ export function resetDatabaseToEmpty(): void {
     DELETE FROM document_sequence;
   `);
 
+  // Insert or update demo_seed_disabled flag so demo records do NOT re-populate
+  try {
+    db.prepare(`
+      INSERT INTO company_settings (setting_key, setting_value, updated_at)
+      VALUES ('demo_seed_disabled', 'true', ?)
+      ON CONFLICT(setting_key) DO UPDATE SET setting_value = 'true', updated_at = ?
+    `).run(now, now);
+  } catch {}
+
+  // If in WebStorage browser mode, clear local storage key as well
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem('dayar_e_habib_db');
+    } catch {}
+  }
+
   // Insert AuditLog entry recording full database reset
   try {
     db.prepare(`
       INSERT INTO audit_log (entity_type, entity_id, action, timestamp, notes)
-      VALUES ('System', 0, 'DATABASE_RESET', ?, 'Full database reset executed by operator. All transactional data wiped clean.')
+      VALUES ('System', 0, 'DATABASE_RESET', ?, 'Full database reset executed by operator. All transactional client data wiped clean.')
     `).run(now);
   } catch (e) {
     console.error('Failed to log database reset audit entry:', e);

@@ -1,6 +1,7 @@
 import { getRawDb } from '../db';
 import { Customer, CustomerIdentity } from '../db/schema';
 import { recordAudit } from './auditService';
+import { uploadNewDocument } from './documentService';
 
 export interface CustomerWithIdentity extends Customer {
   identities: CustomerIdentity[];
@@ -178,6 +179,9 @@ export function createCustomer(data: {
   issue_date?: string;
   expiry_date?: string;
   place_of_issue?: string;
+  document_file_buffer?: Uint8Array;
+  document_filename?: string;
+  document_mime_type?: string;
 }): CustomerWithIdentity {
   const db = getRawDb();
   const now = new Date().toISOString();
@@ -202,6 +206,7 @@ export function createCustomer(data: {
   );
 
   const customerId = Number(res.lastInsertRowid);
+  let createdIdentityId: number | null = null;
 
   if (data.passport_number) {
     const insertIdStmt = db.prepare(`
@@ -220,15 +225,35 @@ export function createCustomer(data: {
       now
     );
 
+    createdIdentityId = Number(idRes.lastInsertRowid);
+
     recordAudit({
       entityType: 'CustomerIdentity',
-      entityId: Number(idRes.lastInsertRowid),
+      entityId: createdIdentityId,
       action: 'Created',
       notes: `Passport ${passportNo} (ACTIVE) attached to customer #${customerId}`,
     });
   }
 
   const insertedCustomer = getCustomerById(customerId)!;
+
+  // Auto-attach scanned document file to Document Vault if provided
+  if (data.document_file_buffer && createdIdentityId) {
+    try {
+      uploadNewDocument({
+        identity_id: createdIdentityId,
+        document_type_id: 1, // Passport
+        document_number: data.passport_number?.trim().toUpperCase(),
+        issue_date: data.issue_date?.trim() || null,
+        expiry_date: data.expiry_date?.trim() || null,
+        original_filename: data.document_filename || 'passport_scan.jpg',
+        fileBuffer: data.document_file_buffer,
+        mime_type: data.document_mime_type || 'image/jpeg',
+      });
+    } catch (e) {
+      console.error('Failed to auto-attach scanned document to vault:', e);
+    }
+  }
 
   recordAudit({
     entityType: 'Customer',

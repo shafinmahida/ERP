@@ -151,42 +151,7 @@ export function CustomerFormModal({
     return null;
   }, [watchedExpiry]);
 
-  const onSubmit = (data: CustomerFormData) => {
-    if (!editingCustomer) {
-      const matches = checkForDuplicates({
-        full_name: data.full_name,
-        father_name: data.father_name,
-        date_of_birth: data.date_of_birth,
-        passport_number: data.passport_number,
-      });
-
-      if (matches.length > 0) {
-        setDuplicateMatches(matches);
-        setPendingFormData(data);
-        setShowDuplicateModal(true);
-        return;
-      }
-    }
-
-    onSaveCustomer(data);
-    onClose();
-  };
-
-  const handleProceedCreateAnyway = () => {
-    if (pendingFormData) {
-      onSaveCustomer(pendingFormData);
-      setShowDuplicateModal(false);
-      onClose();
-    }
-  };
-
-  const handleSelectExisting = (cust: CustomerWithIdentity) => {
-    if (onSelectExistingCustomer) {
-      onSelectExistingCustomer(cust);
-    }
-    setShowDuplicateModal(false);
-    onClose();
-  };
+  const [pendingScanFile, setPendingScanFile] = useState<{ buffer: Uint8Array; name: string; type: string } | null>(null);
 
   const handlePassportScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -194,6 +159,10 @@ export function CustomerFormModal({
     setIsProcessingOcr(true);
 
     try {
+      const arrayBuf = await file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuf);
+      setPendingScanFile({ buffer: uint8, name: file.name, type: file.type });
+
       const img = new Image();
       img.src = URL.createObjectURL(file);
       await img.decode();
@@ -207,6 +176,34 @@ export function CustomerFormModal({
     } finally {
       setIsProcessingOcr(false);
     }
+  };
+
+  const onSubmit = (data: CustomerFormData) => {
+    const payload = {
+      ...data,
+      document_file_buffer: pendingScanFile?.buffer,
+      document_filename: pendingScanFile?.name,
+      document_mime_type: pendingScanFile?.type,
+    };
+
+    if (!editingCustomer) {
+      const matches = checkForDuplicates({
+        full_name: data.full_name,
+        father_name: data.father_name,
+        date_of_birth: data.date_of_birth,
+        passport_number: data.passport_number,
+      });
+
+      if (matches.length > 0) {
+        setDuplicateMatches(matches);
+        setPendingFormData(payload as any);
+        setShowDuplicateModal(true);
+        return;
+      }
+    }
+
+    onSaveCustomer(payload as any);
+    onClose();
   };
 
   const handleConfirmOcrFields = (scanned: any) => {
@@ -223,6 +220,22 @@ export function CustomerFormModal({
       place_of_issue: scanned.place_of_issue || watch('place_of_issue'),
     });
     setShowOcrPanel(false);
+  };
+
+  const handleProceedCreateAnyway = () => {
+    if (pendingFormData) {
+      onSaveCustomer(pendingFormData);
+      setShowDuplicateModal(false);
+      onClose();
+    }
+  };
+
+  const handleSelectExisting = (cust: CustomerWithIdentity) => {
+    if (onSelectExistingCustomer) {
+      onSelectExistingCustomer(cust);
+    }
+    setShowDuplicateModal(false);
+    onClose();
   };
 
   if (!isOpen) return null;
