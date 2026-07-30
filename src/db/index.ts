@@ -156,16 +156,6 @@ class WebStorageDiskStore {
         const parsed = JSON.parse(content);
         this.tables = parsed.tables || {};
         this.autoIds = parsed.autoIds || {};
-        if (
-          !this.tables['customer_identity'] ||
-          !this.tables['registration'] ||
-          this.tables['registration'].length < 3 ||
-          !this.tables['customer'] ||
-          this.tables['customer'].length < 20
-        ) {
-          this.tables = {};
-          this.autoIds = {};
-        }
       }
 
       this.ensureDemoSeed();
@@ -178,6 +168,10 @@ class WebStorageDiskStore {
 
   private ensureDemoSeed() {
     const now = new Date().toISOString();
+    const settings = this.tables['company_settings'] || [];
+    const disabledSetting = settings.find((s: any) => s.setting_key === 'demo_seed_disabled');
+    const isSeedDisabled = disabledSetting && disabledSetting.setting_value === 'true';
+
     if (!this.tables['season_type'] || this.tables['season_type'].length === 0) {
       this.tables['season_type'] = [
         { season_type_id: 1, name: 'Hajj', code: 'HAJJ', description: 'Annual Hajj Pilgrimage Season', is_active: 1 },
@@ -203,6 +197,16 @@ class WebStorageDiskStore {
         { package_id: 4, season_id: 2, name: 'Umrah Economy Saver', description: '3-Star Accommodations near Haram', base_price_paise: 8500000 },
       ];
       this.autoIds['package'] = 4;
+    }
+
+    if (isSeedDisabled) {
+      // User explicitly disabled demo seed / wiped database clean. Preserve empty tables!
+      if (!this.tables['customer']) this.tables['customer'] = [];
+      if (!this.tables['customer_identity']) this.tables['customer_identity'] = [];
+      if (!this.tables['registration']) this.tables['registration'] = [];
+      if (!this.tables['registration_pax']) this.tables['registration_pax'] = [];
+      if (!this.tables['payment']) this.tables['payment'] = [];
+      return;
     }
 
     const demoCusts = [
